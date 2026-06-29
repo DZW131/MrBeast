@@ -1,0 +1,19 @@
+{
+  "_comment": "Class-aware MR postprocessing rules per Cine view. Each rule supports keep_top_k, min_component_size, max_distance_to_heart_mm, fill_holes. The heart body is the largest foreground union component; components farther than max_distance_to_heart_mm from it are rejected.",
+  "sax": {
+    "1": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "2": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "3": {"keep_top_k": 1, "fill_holes": false, "max_distance_to_heart_mm": 15.0}
+  },
+  "2ch": {
+    "1": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "2": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0}
+  },
+  "4ch": {
+    "1": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "2": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "3": {"keep_top_k": 1, "fill_holes": false, "max_distance_to_heart_mm": 15.0},
+    "4": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0},
+    "5": {"keep_top_k": 1, "fill_holes": true, "max_distance_to_heart_mm": 15.0}
+  }
+}

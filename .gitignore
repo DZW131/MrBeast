@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated nnU-Net data / outputs
+cmr_multi_task1/DATASET/
+
+# External code and weights (set up separately, see README)
+third_party/
+pretrained/
+
+# Model checkpoints
+**/checkpoint_*.pth
+**/*.pth
+
+# Logs / archives
+*.log
+*.tmp
+*.tar
+*.tar.gz
+*.zip
+.idea/
+.vscode/

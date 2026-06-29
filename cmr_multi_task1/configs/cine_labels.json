@@ -1,0 +1,46 @@
+{
+  "task_name": "CMR_MULTI_CINE",
+  "source": "https://mwm2026.github.io/cmr-multi",
+  "huggingface": "https://huggingface.co/datasets/TaipingQu/CMR-MULTI",
+  "channel_name": "MR",
+  "views": {
+    "sax": {
+      "dataset_id": 501,
+      "dataset_name": "Dataset501_CMRMULTI_CINE_SAX",
+      "folder": "SAX",
+      "num_foreground": 3,
+      "labels": {
+        "background": 0,
+        "LV_Myo": 1,
+        "LV_Cavity": 2,
+        "RV_Cavity": 3
+      }
+    },
+    "2ch": {
+      "dataset_id": 502,
+      "dataset_name": "Dataset502_CMRMULTI_CINE_2CH",
+      "folder": "2CH",
+      "num_foreground": 2,
+      "labels": {
+        "background": 0,
+        "LV_Cavity": 1,
+        "LV_Myo": 2
+      }
+    },
+    "4ch": {
+      "dataset_id": 503,
+      "dataset_name": "Dataset503_CMRMULTI_CINE_4CH",
+      "folder": "4CH",
+      "num_foreground": 5,
+      "labels": {
+        "background": 0,
+        "LV_Cavity": 1,
+        "LV_Myo": 2,
+        "RV_Cavity": 3,
+        "RA": 4,
+        "LA": 5
+      }
+    }
+  }
+}
+
