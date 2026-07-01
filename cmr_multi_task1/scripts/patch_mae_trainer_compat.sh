@@ -14,3 +14,11 @@ if grep -Fq 'for c in cit["apa_citations"]:' "${TARGET}"; then
 else
   echo "MAE PretrainedTrainer already patched or upstream changed: ${TARGET}"
 fi
+
+if ! grep -Fq 'lpe_in_encoder = False' "${TARGET}"; then
+  cp -n "${TARGET}" "${TARGET}.orig"
+  perl -0pi -e 's/        lpe_in_stem = False\n/        lpe_in_encoder = False\n        lpe_in_stem = False\n/g' "${TARGET}"
+  echo "Patched MAE PretrainedTrainer LPE guard for non-LPE ResEnc checkpoints: ${TARGET}"
+else
+  echo "MAE PretrainedTrainer LPE guard already patched or upstream changed: ${TARGET}"
+fi

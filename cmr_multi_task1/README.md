@@ -45,7 +45,8 @@ refined with class-aware MR postprocessing:
 1. **Data conversion** ? `convert_cine_to_nnunet.py` turns CINE_MULTI into three
    nnU-Net raw datasets (SAX/2CH/4CH).
 2. **MAE-adapted preprocessing** ? `preprocess_cine_mae_pretrained.sh` aligns each
-   dataset to the MAE checkpoint's architecture plan via the TaWald nnSSL branch.
+   dataset to the MAE checkpoint's architecture plan via the TaWald nnSSL branch,
+   then writes a CMR cine safe-patch plan.
 3. **MAE fine-tuning** ? `train_cine_mae_pretrained.sh` fine-tunes the ResEncL
    encoder + decoder from the pretrained weights for segmentation.
 4. **Prediction** ? `predict.sh` (MAE=1) exports masks for the val/test split.
@@ -143,6 +144,22 @@ GPU=0 FOLD=0 bash cmr_multi_task1/scripts/train_cine_mae_pretrained.sh sax 0
 # 5-fold:
 GPU=0 bash cmr_multi_task1/scripts/train_cine_mae_pretrained.sh sax all
 ```
+
+The TaWald nnSSL adapter recommends a generic 160x160x160 downstream patch for
+the ResEncL MAE checkpoint. For these cine volumes that over-pads the small
+axis, especially 2CH/4CH. By default preprocessing also creates a
+`____Patch__...` ptPlans JSON whose patch is derived from the base nnU-Net cine
+plan and rounded up to ResEncL's 32-voxel stride multiple:
+
+| View | Base nnU-Net patch | MAE safe patch |
+| --- | --- | --- |
+| SAX | 96x160x96 | 96x160x96 |
+| 2CH | 112x64x112 | 128x64x128 |
+| 4CH | 112x56x112 | 128x64x128 |
+
+`train_cine_mae_pretrained.sh` requires the safe-patch plan by default. Set
+`MAE_SAFE_CINE_PATCH=0` during preprocessing or `MAE_REQUIRE_SAFE_PLAN=0` during
+training only when intentionally reproducing the generic 160x160x160 setting.
 
 ### 4. Predict
 

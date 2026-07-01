@@ -16,13 +16,13 @@ postprocessing** ? LVEF quantification. See
 [`cmr_multi_task1/README.md`](cmr_multi_task1/README.md) for the full runbook.
 
 ```
-convert_cine_to_nnunet.py        # CINE_MULTI -> 3 nnU-Net datasets (SAX/2CH/4CH)
-preprocess_cine_mae_pretrained.sh# align datasets to the MAE checkpoint plan
-train_cine_mae_pretrained.sh     # MAE fine-tune (ResEncL) per view / fold
-predict.sh                       # export val/test masks (MAE=1)
-postprocess.sh                   # class-aware MR connected-component cleanup
-calculate_lvef.py                # LVEF from postprocessed SAX masks
-evaluate_val.py                  # Dice / HD95 on held-out validation
+convert_cine_to_nnunet.py         # CINE_MULTI -> 3 nnU-Net datasets (SAX/2CH/4CH)
+preprocess_cine_mae_pretrained.sh # MAE preprocessing + CMR cine safe-patch plan
+train_cine_mae_pretrained.sh      # MAE fine-tune (ResEncL) per view / fold
+predict.sh                        # export val/test masks (MAE=1)
+postprocess.sh                    # class-aware MR connected-component cleanup
+calculate_lvef.py                 # LVEF from postprocessed SAX masks
+evaluate_val.py                   # Dice / HD95 on held-out validation
 ```
 
 ## Repository layout

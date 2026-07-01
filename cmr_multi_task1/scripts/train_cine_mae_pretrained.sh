@@ -15,10 +15,11 @@ fold: 0 1 2 3 4 (or all)
 Environment overrides:
   GPU=0
   MAE_TRAINER=PretrainedTrainer
-  MAE_PATCH_COMPAT=1   apply TaWald PretrainedTrainer citation patch
+  MAE_PATCH_COMPAT=1   apply TaWald PretrainedTrainer compatibility patches
   CONTINUE=1           resume from latest checkpoint
   SAVE_NPZ=1           save npz for ensembling
   MAE_PLANS_NAME=      explicit ptPlans name (auto-detected if empty)
+  MAE_REQUIRE_SAFE_PLAN=1  require a cine safe-patch ptPlans JSON
 EOF
 }
 
@@ -37,6 +38,7 @@ MAE_TRAINER="${MAE_TRAINER:-PretrainedTrainer}"
 MAE_PATCH_COMPAT="${MAE_PATCH_COMPAT:-1}"
 SAVE_NPZ="${SAVE_NPZ:-1}"
 CONTINUE="${CONTINUE:-0}"
+MAE_REQUIRE_SAFE_PLAN="${MAE_REQUIRE_SAFE_PLAN:-1}"
 
 DATASET_DIR="$(find "${nnUNet_preprocessed}" -maxdepth 1 -type d -name "Dataset${DATASET_ID}_*" | head -n 1)"
 if [[ -z "${DATASET_DIR}" || ! -d "${DATASET_DIR}" ]]; then
@@ -49,6 +51,11 @@ if [[ -z "${MAE_PLANS_NAME:-}" ]]; then
     echo "ERROR: No MAE plans found. Run preprocess_cine_mae_pretrained.sh first." >&2; exit 1
   fi
   MAE_PLANS_NAME="$(basename "${MAE_PLANS_JSON}" .json)"
+fi
+if [[ "${MAE_REQUIRE_SAFE_PLAN}" == "1" && "${MAE_PLANS_NAME}" != *"____Patch__"* ]]; then
+  echo "ERROR: MAE plan '${MAE_PLANS_NAME}' is missing the cine safe-patch suffix." >&2
+  echo "Run preprocess_cine_mae_pretrained.sh, or set MAE_REQUIRE_SAFE_PLAN=0 to use it anyway." >&2
+  exit 1
 fi
 
 EXTRA_ARGS=()
