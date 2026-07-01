@@ -5,6 +5,7 @@ __pycache__/
 
 # Generated nnU-Net data / outputs
 cmr_multi_task1/DATASET/
+care_myocardium/DATASET/
 
 # External code and weights (set up separately, see README)
 third_party/

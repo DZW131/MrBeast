@@ -75,3 +75,10 @@ Two conda envs:
   `MAE_CONDA_PREFIX` here.
 
 See `cmr_multi_task1/README.md` for the step-by-step commands.
+
+## CARE 2026 CineMyoPS
+
+`care_myocardium/` contains the starter pipeline for the MICCAI CARE 2026
+CineMyoPS track. It converts 4D cine CMR training cases plus 3D ED-frame
+scar/myocardium labels into nnU-Net datasets, with both ED-frame and all-frame
+input modes. See [`care_myocardium/README.md`](care_myocardium/README.md).
