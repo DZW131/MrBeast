@@ -13,6 +13,8 @@ Environment overrides:
   CONFIGURATION 3d_fullres (default)
   TRAINER       nnUNetTrainer (default)
   CONTINUE=1    resume from latest checkpoint
+  nnUNet_n_proc_DA data augmentation worker count
+  nnUNet_compile   torch.compile toggle
 EOF
 }
 
@@ -29,9 +31,14 @@ EXTRA=()
 if [[ "${CONTINUE:-0}" == "1" ]]; then EXTRA+=(--c); fi
 EXTRA+=("$@")
 
+if [[ "${CARE_DATASET_ID}" == "602" ]]; then
+  export nnUNet_n_proc_DA="${nnUNet_n_proc_DA:-0}"
+  export nnUNet_compile="${nnUNet_compile:-f}"
+fi
+
 train_one() {
   local f="$1"
-  echo "[CARE train] dataset_id=${CARE_DATASET_ID} fold=${f} gpu=${GPU} trainer=${TRAINER}"
+  echo "[CARE train] dataset_id=${CARE_DATASET_ID} fold=${f} gpu=${GPU} trainer=${TRAINER} n_proc_DA=${nnUNet_n_proc_DA:-default} compile=${nnUNet_compile:-default}"
   CUDA_VISIBLE_DEVICES="${GPU}" nnUNetv2_train \
     "${CARE_DATASET_ID}" "${CONFIGURATION}" "${f}" \
     -tr "${TRAINER}" "${EXTRA[@]}"

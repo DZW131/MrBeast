@@ -101,6 +101,14 @@ class CineMemorySegmentationNetwork(nn.Module):
         )
         self.base_network = base_network
 
+    @property
+    def decoder(self):
+        return self.base_network.decoder
+
+    @property
+    def encoder(self):
+        return self.base_network.encoder
+
     def forward(self, x: torch.Tensor):
         return self.base_network(self.memory_stem(x))
 

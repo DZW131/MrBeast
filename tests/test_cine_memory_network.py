@@ -3,10 +3,14 @@ from pathlib import Path
 import sys
 
 import torch
+from torch import nn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from care_myocardium.nnunet_ext.cine_memory_network import CineTemporalMemoryStem
+from care_myocardium.nnunet_ext.cine_memory_network import (
+    CineMemorySegmentationNetwork,
+    CineTemporalMemoryStem,
+)
 
 
 class CineTemporalMemoryStemTests(unittest.TestCase):
@@ -40,6 +44,34 @@ class CineTemporalMemoryStemTests(unittest.TestCase):
         y = stem(x)
 
         self.assertTrue(torch.equal(x, y))
+
+    def test_segmentation_wrapper_exposes_nnunet_backbone_contract(self):
+        class Decoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.deep_supervision = True
+
+        class BaseNetwork(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Identity()
+                self.decoder = Decoder()
+
+            def forward(self, x):
+                return x
+
+            def compute_conv_feature_map_size(self, input_size):
+                return tuple(input_size)
+
+        base = BaseNetwork()
+        network = CineMemorySegmentationNetwork(base, num_input_channels=3, memory_embed_dim=2)
+
+        network.decoder.deep_supervision = False
+
+        self.assertIs(network.decoder, base.decoder)
+        self.assertIs(network.encoder, base.encoder)
+        self.assertFalse(base.decoder.deep_supervision)
+        self.assertEqual(network.compute_conv_feature_map_size((4, 5, 6)), (4, 5, 6))
 
 
 if __name__ == "__main__":
