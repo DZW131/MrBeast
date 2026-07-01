@@ -79,6 +79,34 @@ CARE_DATASET_ID=602 bash care_myocardium/scripts/plan_preprocess.sh
 GPU=0 CARE_DATASET_ID=602 bash care_myocardium/scripts/train_nnunet.sh 0
 ```
 
+SAM2-inspired cine memory variant:
+
+This keeps nnU-Net as the segmentation backbone but prepends a lightweight
+temporal memory reader. The ED frame is the query, the remaining cine frames are
+read as a memory bank with voxel-wise temporal attention, and the network then
+segments the enhanced ED volume. This is intended for `Dataset602` because it
+needs all 30 frames as input channels.
+
+```bash
+# after creating and preprocessing Dataset602_CARE_CineMyoPS_AllFrames
+GPU=0 bash care_myocardium/scripts/train_cine_memory_nnunet.sh 0
+```
+
+Useful knobs:
+
+```bash
+CINE_MEMORY_EMBED_DIM=12 \
+CINE_MEMORY_QUERY_FRAME_INDEX=0 \
+GPU=0 bash care_myocardium/scripts/train_cine_memory_nnunet.sh 0
+```
+
+For prediction with this trainer, export the external trainer path before
+calling `nnUNetv2_predict`:
+
+```bash
+export nnUNet_extTrainer="$(pwd)/care_myocardium/nnunet_ext"
+```
+
 Before submission, map predictions back to source label values:
 
 ```bash
