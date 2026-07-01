@@ -81,8 +81,9 @@ GPU=0 CARE_DATASET_ID=602 bash care_myocardium/scripts/train_nnunet.sh 0
 
 `Dataset602` stores all 30 cine frames as channels, so each 3D sample is much
 larger than the ED-only baseline. The training script defaults this dataset to
-`nnUNet_n_proc_DA=0` and `nnUNet_compile=f` unless you override them, which
-avoids unstable data-augmentation workers on large `.b2nd` cases.
+`nnUNet_n_proc_DA=2` and `nnUNet_compile=f` unless you override them. A short
+server benchmark found this stable on the CARE all-frame `.b2nd` cases while
+being substantially faster than single-threaded augmentation.
 
 SAM2-inspired cine memory variant:
 
