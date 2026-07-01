@@ -45,7 +45,8 @@ explicit ED frame index, so `convert_cine_myops_to_nnunet.py` makes the frame
 choice configurable and defaults to frame 0.
 
 Use `--mode ed` for a simple 3D baseline. Use `--mode all_frames` to export all
-30 cine frames as 30 nnU-Net input channels.
+30 cine frames as 30 nnU-Net input channels. Keep these as separate nnU-Net
+dataset ids so preprocessing and checkpoints do not overwrite each other.
 
 ## Runbook
 
@@ -56,10 +57,26 @@ python care_myocardium/scripts/convert_cine_myops_to_nnunet.py \
   --data-root /path/to/CAREdatasets \
   --dataset-root care_myocardium/DATASET \
   --mode ed \
+  --dataset-id 601 \
+  --dataset-name CARE_CineMyoPS_ED \
   --frame-index 0
 
-bash care_myocardium/scripts/plan_preprocess.sh
-GPU=0 bash care_myocardium/scripts/train_nnunet.sh 0
+CARE_DATASET_ID=601 bash care_myocardium/scripts/plan_preprocess.sh
+GPU=0 CARE_DATASET_ID=601 bash care_myocardium/scripts/train_nnunet.sh 0
+```
+
+Motion-information variant:
+
+```bash
+python care_myocardium/scripts/convert_cine_myops_to_nnunet.py \
+  --data-root /path/to/CAREdatasets \
+  --dataset-root care_myocardium/DATASET \
+  --mode all_frames \
+  --dataset-id 602 \
+  --dataset-name CARE_CineMyoPS_AllFrames
+
+CARE_DATASET_ID=602 bash care_myocardium/scripts/plan_preprocess.sh
+GPU=0 CARE_DATASET_ID=602 bash care_myocardium/scripts/train_nnunet.sh 0
 ```
 
 Before submission, map predictions back to source label values:
