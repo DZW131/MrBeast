@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Build a second-stage CARE scar ROI nnU-Net dataset.
+"""Build staged CARE myocardium or scar ROI nnU-Net datasets.
 
 The first-stage model segments the full ED frame. This script crops a focused
-ROI around the predicted scar proposal, adds simple first-stage priors as input
-channels, and trains a binary scar refiner on the cropped region.
+ROI around the chosen predicted target proposal, adds simple first-stage priors
+as input channels, and trains a binary ROI refiner on the cropped region.
 
 Channels:
     0000: ED image crop
-    0001: first-stage scar prior, binary
+    0001: first-stage target prior, binary
     0002: first-stage heart/context prior, binary foreground
 
 Labels:
     0 background
-    1 LV myocardial scar
+    1 selected target, either LV myocardium including scar or LV scar
 """
 
 from __future__ import annotations
@@ -27,8 +27,37 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_ROOT = ROOT / "DATASET"
 DEFAULT_ED_DATASET = "Dataset601_CARE_CineMyoPS_ED"
-DEFAULT_OUTPUT_ID = 603
-DEFAULT_OUTPUT_NAME = "CARE_CineMyoPS_ScarROI_ED"
+
+TARGET_CONFIGS = {
+    "scar": {
+        "default_output_id": 603,
+        "default_output_name": "CARE_CineMyoPS_ScarROI_ED",
+        "proposal_label_ids": (3,),
+        "target_label_ids": (3,),
+        "target_channel_name": "stage1_scar_prior",
+        "context_channel_name": "stage1_heart_prior",
+        "output_label_name": "LV_myocardial_scar",
+        "proposal_source": "stage1_scar",
+        "gt_source": "gt_scar_fallback",
+        "voxel_key": "scar_voxels",
+        "prior_voxel_key": "stage1_scar_voxels_in_crop",
+        "manifest_name": "scar_roi_manifest.json",
+    },
+    "myo": {
+        "default_output_id": 604,
+        "default_output_name": "CARE_CineMyoPS_MyoROI_ED",
+        "proposal_label_ids": (1, 3),
+        "target_label_ids": (1, 3),
+        "target_channel_name": "stage1_myo_prior",
+        "context_channel_name": "stage1_heart_prior",
+        "output_label_name": "LV_myocardium_including_scar",
+        "proposal_source": "stage1_myo",
+        "gt_source": "gt_myo_fallback",
+        "voxel_key": "myo_voxels",
+        "prior_voxel_key": "stage1_myo_voxels_in_crop",
+        "manifest_name": "myo_roi_manifest.json",
+    },
+}
 
 
 def strip_nii_suffix(name: str) -> str:
@@ -65,6 +94,12 @@ def bbox_from_mask(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
     return coords.min(axis=0), coords.max(axis=0) + 1
 
 
+def mask_from_labels(data: np.ndarray, label_ids: tuple[int, ...]) -> np.ndarray:
+    if len(label_ids) == 1:
+        return data == label_ids[0]
+    return np.isin(data, np.asarray(label_ids, dtype=data.dtype))
+
+
 def centered_bounds(
     start: int,
     end: int,
@@ -92,15 +127,19 @@ def centered_bounds(
 def choose_crop(
     pred: np.ndarray,
     label: np.ndarray | None,
+    proposal_label_ids: tuple[int, ...],
+    target_label_ids: tuple[int, ...],
+    proposal_source: str,
+    gt_source: str,
     margin_xy: int,
     min_xy: int,
     full_z: bool,
 ) -> tuple[slice, slice, slice, str]:
-    proposal = bbox_from_mask(pred == 3)
-    source = "stage1_scar"
+    proposal = bbox_from_mask(mask_from_labels(pred, proposal_label_ids))
+    source = proposal_source
     if proposal is None and label is not None:
-        proposal = bbox_from_mask(label == 3)
-        source = "gt_scar_fallback"
+        proposal = bbox_from_mask(mask_from_labels(label, target_label_ids))
+        source = gt_source
     if proposal is None:
         proposal = bbox_from_mask(pred > 0)
         source = "stage1_foreground_fallback"
@@ -146,16 +185,16 @@ def save_like(
     nib.save(out, str(out_path))
 
 
-def write_dataset_json(dataset_dir: Path, num_training: int) -> None:
+def write_dataset_json(dataset_dir: Path, num_training: int, config: dict) -> None:
     payload = {
         "channel_names": {
             "0": "cine_ed_roi",
-            "1": "stage1_scar_prior",
-            "2": "stage1_heart_prior",
+            "1": config["target_channel_name"],
+            "2": config["context_channel_name"],
         },
         "labels": {
             "background": 0,
-            "LV_myocardial_scar": 1,
+            config["output_label_name"]: 1,
         },
         "numTraining": int(num_training),
         "file_ending": ".nii.gz",
@@ -165,12 +204,13 @@ def write_dataset_json(dataset_dir: Path, num_training: int) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Create CARE scar ROI refiner dataset.")
+    p = argparse.ArgumentParser(description="Create CARE myocardium or scar ROI refiner dataset.")
+    p.add_argument("--target", choices=sorted(TARGET_CONFIGS), default="scar")
     p.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     p.add_argument("--ed-dataset-name", default=DEFAULT_ED_DATASET)
     p.add_argument("--stage1-pred-dir", type=Path, default=None)
-    p.add_argument("--output-dataset-id", type=int, default=DEFAULT_OUTPUT_ID)
-    p.add_argument("--output-dataset-name", default=DEFAULT_OUTPUT_NAME)
+    p.add_argument("--output-dataset-id", type=int, default=None)
+    p.add_argument("--output-dataset-name", default=None)
     p.add_argument("--margin-xy", type=int, default=48)
     p.add_argument("--min-xy", type=int, default=128)
     p.add_argument("--crop-full-z", action=argparse.BooleanOptionalAction, default=True)
@@ -181,15 +221,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    config = TARGET_CONFIGS[args.target]
+    output_dataset_id = args.output_dataset_id or config["default_output_id"]
+    output_dataset_name = args.output_dataset_name or config["default_output_name"]
+
     ed_dir = args.dataset_root / "nnUNet_raw" / args.ed_dataset_name
     images_tr = ed_dir / "imagesTr"
     labels_tr = ed_dir / "labelsTr"
     if not images_tr.is_dir() or not labels_tr.is_dir():
         raise FileNotFoundError(f"Expected imagesTr/labelsTr under {ed_dir}")
 
-    dataset_name = args.output_dataset_name
-    if not dataset_name.startswith(f"Dataset{args.output_dataset_id:03d}_"):
-        dataset_name = f"Dataset{args.output_dataset_id:03d}_{dataset_name}"
+    dataset_name = output_dataset_name
+    if not dataset_name.startswith(f"Dataset{output_dataset_id:03d}_"):
+        dataset_name = f"Dataset{output_dataset_id:03d}_{dataset_name}"
     out_dir = args.dataset_root / "nnUNet_raw" / dataset_name
     out_images = out_dir / "imagesTr"
     out_labels = out_dir / "labelsTr"
@@ -201,6 +245,7 @@ def main() -> None:
         raise FileNotFoundError(f"No *_0000.nii.gz files in {images_tr}")
 
     manifest = []
+    print(f"target       = {args.target}")
     print(f"ed_dir       = {ed_dir}")
     print(f"stage1_pred  = {args.stage1_pred_dir}")
     print(f"out_dir      = {out_dir}")
@@ -227,23 +272,28 @@ def main() -> None:
         sx, sy, sz, source = choose_crop(
             pred=pred,
             label=label,
+            proposal_label_ids=config["proposal_label_ids"],
+            target_label_ids=config["target_label_ids"],
+            proposal_source=config["proposal_source"],
+            gt_source=config["gt_source"],
             margin_xy=args.margin_xy,
             min_xy=args.min_xy,
             full_z=args.crop_full_z,
         )
         slices = (sx, sy, sz)
         ed_crop = image[slices]
-        scar_prior = (pred[slices] == 3).astype(np.float32)
+        target_prior = mask_from_labels(pred[slices], config["proposal_label_ids"]).astype(np.float32)
         heart_prior = (pred[slices] > 0).astype(np.float32)
-        scar_label = (label[slices] == 3).astype(np.int16)
+        target_label = mask_from_labels(label[slices], config["target_label_ids"]).astype(np.int16)
 
         save_like(ed_crop, img, slices, out_images / f"{case_id}_0000.nii.gz", img.get_data_dtype())
-        save_like(scar_prior, img, slices, out_images / f"{case_id}_0001.nii.gz", np.float32)
+        save_like(target_prior, img, slices, out_images / f"{case_id}_0001.nii.gz", np.float32)
         save_like(heart_prior, img, slices, out_images / f"{case_id}_0002.nii.gz", np.float32)
-        save_like(scar_label, label_img, slices, out_labels / f"{case_id}.nii.gz", np.int16)
+        save_like(target_label, label_img, slices, out_labels / f"{case_id}.nii.gz", np.int16)
 
         crop_box = [[s.start, s.stop] for s in slices]
         manifest.append({
+            "target": args.target,
             "case_id": case_id,
             "source_image": str(img_path),
             "source_label": str(label_path),
@@ -251,22 +301,26 @@ def main() -> None:
             "proposal_source": source,
             "crop_box_xyz": crop_box,
             "source_shape": list(label.shape),
-            "crop_shape": list(scar_label.shape),
-            "scar_voxels": int(scar_label.sum()),
-            "stage1_scar_voxels_in_crop": int(scar_prior.sum()),
+            "crop_shape": list(target_label.shape),
+            config["voxel_key"]: int(target_label.sum()),
+            config["prior_voxel_key"]: int(target_prior.sum()),
         })
-        print(f"{case_id}: {source} crop={crop_box} scar_voxels={int(scar_label.sum())}")
+        print(f"{case_id}: {source} crop={crop_box} {config['voxel_key']}={int(target_label.sum())}")
 
-    write_dataset_json(out_dir, len(manifest))
-    with (out_dir / "scar_roi_manifest.json").open("w", encoding="utf-8") as f:
-        json.dump({
+    write_dataset_json(out_dir, len(manifest), config)
+    manifest_payload = {
+            "target": args.target,
             "ed_dataset": str(ed_dir),
             "stage1_pred_dir": str(args.stage1_pred_dir) if args.stage1_pred_dir else None,
             "margin_xy": args.margin_xy,
             "min_xy": args.min_xy,
             "crop_full_z": args.crop_full_z,
             "cases": manifest,
-        }, f, indent=2)
+    }
+    with (out_dir / config["manifest_name"]).open("w", encoding="utf-8") as f:
+        json.dump(manifest_payload, f, indent=2)
+    with (out_dir / "roi_manifest.json").open("w", encoding="utf-8") as f:
+        json.dump(manifest_payload, f, indent=2)
     print(f"Created {out_dir}")
     print(f"cases={len(manifest)}")
 

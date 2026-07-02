@@ -11,7 +11,7 @@ Runs the second-stage CARE scar ROI refiner on Dataset603.
 Environment overrides:
   GPU             CUDA_VISIBLE_DEVICES (default 0)
   CARE_DATASET_ID default 603
-  SCAR_ROI_EPOCHS default 300
+  SCAR_ROI_EPOCHS default 300; ROI_EPOCHS also accepted
   CONTINUE=1      resume from latest checkpoint
 EOF
 }
@@ -24,7 +24,7 @@ CARE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 export CARE_DATASET_ID="${CARE_DATASET_ID:-603}"
 export TRAINER="${TRAINER:-ScarROI300EpochTrainer}"
-export SCAR_ROI_EPOCHS="${SCAR_ROI_EPOCHS:-300}"
+export SCAR_ROI_EPOCHS="${SCAR_ROI_EPOCHS:-${ROI_EPOCHS:-300}}"
 export nnUNet_extTrainer="${CARE_ROOT}/nnunet_ext${nnUNet_extTrainer:+:${nnUNet_extTrainer}}"
 export nnUNet_n_proc_DA="${nnUNet_n_proc_DA:-2}"
 export nnUNet_compile="${nnUNet_compile:-f}"
