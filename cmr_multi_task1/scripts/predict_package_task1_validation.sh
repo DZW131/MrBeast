@@ -49,7 +49,7 @@ done
 SAX_FOR_EF="${OUT_ROOT}/sax_pred_pp"
 if [[ "${POSTPROCESS}" != "1" ]]; then SAX_FOR_EF="${OUT_ROOT}/sax_pred"; fi
 if [[ "${SPLIT}" == "val" ]]; then
-  SLICE_INFO="${SLICE_INFO:-/data/sdb/jingkun/duyanhong/data/CMR_MULTI_dl/CINE_MULTI/sax_slice_info.json}"
+  SLICE_INFO="${SLICE_INFO:-/data/sdb/jingkun/duyanhong/data/CMR_MULTI_dl/CINE_MULTI/id_slice_info_valid.json}"
 else
   SLICE_INFO="${SLICE_INFO:-/data/sdb/jingkun/duyanhong/data/CMR_MULTI_dl/CINE_MULTI/sax_slice_info_test.json}"
 fi
