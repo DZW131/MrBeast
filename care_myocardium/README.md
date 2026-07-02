@@ -133,3 +133,39 @@ python care_myocardium/scripts/restore_cine_myops_labels.py \
   --input-dir care_myocardium/DATASET/predictions/cine_myops_test \
   --output-dir care_myocardium/DATASET/predictions/cine_myops_test_source_labels
 ```
+
+## Validation Leaderboard Packaging
+
+The CARE validation leaderboard expects a zip named like
+`CARE-Myocardium-TeamName.zip`. For the CineMyoPS-only baseline, package only
+the `CineMyoPS` folder:
+
+```text
+CARE-Myocardium-Monster.zip
+└── CineMyoPS
+    └── Anonymous Center
+        └── Case****
+            └── Case****_pred.nii.gz
+```
+
+Once the official anonymous CineMyoPS validation images are available on the
+server, run the ED baseline submission pipeline:
+
+```bash
+CARE_CINEMYOPS_INFER_ROOT=/path/to/anonymous/CineMyoPS_validation \
+TEAM_NAME=Monster \
+GPU=0 \
+bash care_myocardium/scripts/predict_ed_baseline_submission.sh
+```
+
+The script extracts frame 0 into nnU-Net `imagesTs`, runs the completed
+`Dataset601` ED baseline checkpoint, restores nnU-Net labels `0/1/2/3` to CARE
+labels `0/200/500/2221`, and writes:
+
+```text
+care_myocardium/DATASET/submissions/CARE-Myocardium-Monster.zip
+```
+
+Current local/server data contains only `Myo_train`; the anonymous validation
+images must be downloaded separately before a real leaderboard upload package
+can be generated.
