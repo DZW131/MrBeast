@@ -126,6 +126,31 @@ calling `nnUNetv2_predict`:
 export nnUNet_extTrainer="$(pwd)/care_myocardium/nnunet_ext"
 ```
 
+Second-stage scar ROI refiner:
+
+This route keeps the stable ED full-image model as stage 1, then trains a short
+binary scar refiner on local crops. Each ROI sample has three channels: ED image
+crop, stage-1 scar prior, and stage-1 foreground context prior. The label is
+binary scar vs background. The trainer defaults to 300 epochs because this is a
+small second-stage dataset.
+
+```bash
+# 1) Predict stage-1 masks on Dataset601 imagesTr with the finished ED baseline.
+GPU=4 bash care_myocardium/scripts/predict_ed_train_for_scar_roi.sh
+
+# 2) Create Dataset603_CARE_CineMyoPS_ScarROI_ED and preprocess it.
+CARE_DATASET_ID=603 bash care_myocardium/scripts/prepare_scar_roi_dataset.sh
+
+# 3) Train the 300-epoch ROI refiner.
+GPU=4 SCAR_ROI_EPOCHS=300 bash care_myocardium/scripts/train_scar_roi_refiner.sh 0
+```
+
+To compare shorter runs:
+
+```bash
+GPU=4 SCAR_ROI_EPOCHS=200 bash care_myocardium/scripts/train_scar_roi_refiner.sh 0
+```
+
 Before submission, map predictions back to source label values:
 
 ```bash
