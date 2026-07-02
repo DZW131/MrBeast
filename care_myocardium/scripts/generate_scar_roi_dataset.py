@@ -178,9 +178,15 @@ def choose_crop(
     margin_xy: int,
     min_xy: int,
     full_z: bool,
+    primary_mask: np.ndarray | None = None,
+    primary_source: str | None = None,
 ) -> tuple[slice, slice, slice, str]:
-    proposal = bbox_from_mask(mask_from_labels(pred, proposal_label_ids))
-    source = proposal_source
+    if primary_mask is not None:
+        proposal = bbox_from_mask(primary_mask)
+        source = primary_source or "primary_mask"
+    else:
+        proposal = bbox_from_mask(mask_from_labels(pred, proposal_label_ids))
+        source = proposal_source
     if proposal is None and label is not None:
         proposal = bbox_from_mask(mask_from_labels(label, target_label_ids))
         source = gt_source
@@ -270,6 +276,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--margin-xy", type=int, default=48)
     p.add_argument("--min-xy", type=int, default=128)
     p.add_argument(
+        "--crop-source",
+        choices=("stage1_target", "stage2_myo", "gt_target"),
+        default="stage1_target",
+        help="Mask used to localize ROI crop before fallbacks.",
+    )
+    p.add_argument(
         "--target-prior-mode",
         choices=("binary", "dilate_xy", "none"),
         default="binary",
@@ -315,6 +327,7 @@ def main() -> None:
     print(f"ed_dir       = {ed_dir}")
     print(f"stage1_pred  = {args.stage1_pred_dir}")
     print(f"stage2_myo   = {args.stage2_myo_pred_dir}")
+    print(f"crop_source  = {args.crop_source}")
     print(f"prior_mode   = {args.target_prior_mode}")
     print(f"out_dir      = {out_dir}")
     print(f"cases        = {len(image_files)}")
@@ -340,9 +353,18 @@ def main() -> None:
             args.stage2_myo_pred_dir,
             case_id,
             label.shape,
-            required=use_stage2_myo_context,
+            required=use_stage2_myo_context or args.crop_source == "stage2_myo",
             label="stage2 myocardium prediction",
         )
+
+        primary_mask = None
+        primary_source = None
+        if args.crop_source == "stage2_myo":
+            primary_mask = stage2_myo > 0
+            primary_source = "stage2_myo"
+        elif args.crop_source == "gt_target":
+            primary_mask = mask_from_labels(label, config["target_label_ids"])
+            primary_source = config["gt_source"]
 
         sx, sy, sz, source = choose_crop(
             pred=pred,
@@ -354,6 +376,8 @@ def main() -> None:
             margin_xy=args.margin_xy,
             min_xy=args.min_xy,
             full_z=args.crop_full_z,
+            primary_mask=primary_mask,
+            primary_source=primary_source,
         )
         slices = (sx, sy, sz)
         ed_crop = image[slices]
@@ -383,6 +407,7 @@ def main() -> None:
             "source_label": str(label_path),
             "stage1_prediction": str((args.stage1_pred_dir / f"{case_id}.nii.gz") if args.stage1_pred_dir else ""),
             "stage2_myo_prediction": str((args.stage2_myo_pred_dir / f"{case_id}.nii.gz") if use_stage2_myo_context else ""),
+            "crop_source_requested": args.crop_source,
             "proposal_source": source,
             "crop_box_xyz": crop_box,
             "source_shape": list(label.shape),
@@ -402,6 +427,7 @@ def main() -> None:
             "ed_dataset": str(ed_dir),
             "stage1_pred_dir": str(args.stage1_pred_dir) if args.stage1_pred_dir else None,
             "stage2_myo_pred_dir": str(args.stage2_myo_pred_dir) if use_stage2_myo_context else None,
+            "crop_source": args.crop_source,
             "target_prior_mode": args.target_prior_mode,
             "prior_dilation_xy": args.prior_dilation_xy,
             "context_prior_channel": context_channel_name,

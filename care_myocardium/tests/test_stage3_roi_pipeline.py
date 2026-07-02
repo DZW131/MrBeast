@@ -135,6 +135,62 @@ class Stage3ROIPipelineTests(unittest.TestCase):
         proposal = np.asanyarray(nib.load(str(out_dir / "imagesTr" / "Case0001_0001.nii.gz")).dataobj)
         self.assertEqual(int(proposal.sum()), 36)
 
+    def test_scar_stage3_can_crop_from_stage2_myo_instead_of_stage1_scar(self) -> None:
+        shape = (16, 16, 3)
+        image = np.zeros(shape, dtype=np.float32)
+        label = np.zeros(shape, dtype=np.int16)
+        label[11:13, 11:13, 1] = 3
+        stage1 = np.zeros(shape, dtype=np.int16)
+        stage1[1:3, 1:3, 1] = 3
+        myo = np.zeros(shape, dtype=np.int16)
+        myo[10:14, 10:14, 1] = 1
+        save_nii(self.ed_dir / "imagesTr" / "Case0001_0000.nii.gz", image)
+        save_nii(self.ed_dir / "labelsTr" / "Case0001.nii.gz", label)
+        save_nii(self.pred_dir / "Case0001.nii.gz", stage1)
+        save_nii(self.myo_dir / "Case0001.nii.gz", myo)
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(GENERATOR),
+                "--target",
+                "scar",
+                "--dataset-root",
+                str(self.root),
+                "--stage1-pred-dir",
+                str(self.pred_dir),
+                "--stage2-myo-pred-dir",
+                str(self.myo_dir),
+                "--crop-source",
+                "stage2_myo",
+                "--target-prior-mode",
+                "dilate_xy",
+                "--prior-dilation-xy",
+                "1",
+                "--output-dataset-id",
+                "607",
+                "--output-dataset-name",
+                "CARE_CineMyoPS_ScarMyoSearchROI_ED",
+                "--min-xy",
+                "6",
+                "--margin-xy",
+                "0",
+                "--overwrite",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        out_dir = self.root / "nnUNet_raw" / "Dataset607_CARE_CineMyoPS_ScarMyoSearchROI_ED"
+        manifest = json.loads((out_dir / "roi_manifest.json").read_text())
+        case = manifest["cases"][0]
+        self.assertEqual(case["proposal_source"], "stage2_myo")
+        self.assertEqual(case["crop_box_xyz"], [[9, 15], [9, 15], [0, 3]])
+        label_crop = np.asanyarray(nib.load(str(out_dir / "labelsTr" / "Case0001.nii.gz")).dataobj)
+        self.assertEqual(int(label_crop.sum()), 4)
+
     def test_restore_roi_prediction_pastes_crop_to_full_image(self) -> None:
         crop_dataset = self.root / "nnUNet_raw" / "Dataset604_CARE_CineMyoPS_MyoROI_ED"
         crop_images = crop_dataset / "imagesTr"
