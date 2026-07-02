@@ -65,6 +65,19 @@ CARE_DATASET_ID=601 bash care_myocardium/scripts/plan_preprocess.sh
 GPU=0 CARE_DATASET_ID=601 bash care_myocardium/scripts/train_nnunet.sh 0
 ```
 
+MWM/CMR-MULTI SAX-initialized CARE ED fine-tune:
+
+The default CARE ED nnU-Net architecture is not identical to the MWM SAX
+baseline architecture, so direct `-pretrained_weights` loading would fail on
+shape checks. This run writes a CARE plan named `nnUNetPlans_MWMSAXArch` that
+keeps the CARE preprocessing, labels, spacing and normalization, but uses the
+MWM SAX network architecture and a compatible CARE patch size. Results are
+therefore stored separately from the CARE ED scratch baseline.
+
+```bash
+GPU=0 bash care_myocardium/scripts/train_mwm_sax_init_ed.sh 0
+```
+
 Motion-information variant:
 
 ```bash
