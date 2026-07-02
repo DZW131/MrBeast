@@ -204,6 +204,23 @@ python cmr_multi_task1/scripts/calculate_lvef.py \
   --output cmr_multi_task1/DATASET/predictions/sax_test_plain/lv_ef_results.json
 ```
 
+### 7. Codabench validation package
+
+Codabench validation expects `submission.zip` with Task 1 Cine predictions under
+`task1_cine/{SAX,2CH,4CH}` plus `task1_cine/ef_predictions.json`.
+
+```bash
+SPLIT=val TAG=baseline FOLDS=0 \
+GPU_SAX=0 GPU_2CH=1 GPU_4CH=5 \
+bash cmr_multi_task1/scripts/predict_package_task1_validation.sh
+```
+
+The package is written to:
+
+```text
+cmr_multi_task1/DATASET/submissions/submission_task1_cine_val_baseline.zip
+```
+
 ## Notes
 
 - Labels are already small contiguous ints; conversion copies + verifies only.
@@ -213,5 +230,4 @@ python cmr_multi_task1/scripts/calculate_lvef.py \
   baseline checkpoints in `nnUNet_result`.
 - `calculate_lvef.py` mirrors the official baseline algorithm exactly so the
   LVEF metric is comparable.
-
 
