@@ -135,11 +135,14 @@ context. This matches the anatomy better than refining scar alone, because scar
 should be constrained by the myocardium.
 
 Stage 2 ROI samples have three channels: ED image crop, stage-1 myocardium
-prior, and stage-1 foreground context prior. Stage 3-v1 uses a new Dataset605
-scar ROI dataset with three channels: ED image crop, stage-1 scar prior, and
-Stage 2 refined myocardium prior. Dataset603 remains the scar-only ROI baseline
-for ablation. The ROI trainers default to 300 epochs because these are small
-second/third-stage datasets.
+prior, and stage-1 foreground context prior. Stage 3-v1/Dataset605 uses ED
+image crop, exact stage-1 scar prior, and Stage 2 refined myocardium prior, but
+diagnostics showed it can collapse into copying the exact scar prior. The
+preferred Stage 3-v2/Dataset606 replaces the exact scar prior with a dilated
+stage-1 scar proposal, so the refiner must learn to contract and correct scar
+inside the myocardium rather than simply copying a binary input. Dataset603
+remains the scar-only ROI baseline for ablation. The ROI trainers default to
+300 epochs because these are small second/third-stage datasets.
 
 ```bash
 # 1) Predict stage-1 masks on Dataset601 imagesTr with the finished ED baseline.
@@ -154,23 +157,26 @@ GPU=4 MYO_ROI_EPOCHS=300 bash care_myocardium/scripts/train_myo_roi_refiner.sh 0
 # 4) Predict Stage 2 myocardium ROI masks and paste them back to full image space.
 GPU=4 bash care_myocardium/scripts/predict_myo_roi_train_for_scar_roi.sh
 
-# 5) Create Dataset605_CARE_CineMyoPS_ScarMyoROI_ED and preprocess it.
-CARE_DATASET_ID=605 bash care_myocardium/scripts/prepare_scar_myo_roi_dataset.sh
+# 5) Create Dataset606_CARE_CineMyoPS_ScarMyoDilatedROI_ED and preprocess it.
+CARE_DATASET_ID=606 bash care_myocardium/scripts/prepare_scar_myo_dilated_roi_dataset.sh
 
-# 6) Train the 300-epoch myo-constrained scar ROI refiner.
-GPU=4 SCAR_ROI_EPOCHS=300 bash care_myocardium/scripts/train_scar_myo_roi_refiner.sh 0
+# 6) Train the 300-epoch no-copy myo-constrained scar ROI refiner.
+GPU=4 CARE_DATASET_ID=606 SCAR_ROI_EPOCHS=300 bash care_myocardium/scripts/train_scar_myo_roi_refiner.sh 0
 ```
 
 To compare shorter runs:
 
 ```bash
 GPU=4 MYO_ROI_EPOCHS=200 bash care_myocardium/scripts/train_myo_roi_refiner.sh 0
-GPU=4 SCAR_ROI_EPOCHS=200 bash care_myocardium/scripts/train_scar_myo_roi_refiner.sh 0
+GPU=4 CARE_DATASET_ID=606 SCAR_ROI_EPOCHS=200 bash care_myocardium/scripts/train_scar_myo_roi_refiner.sh 0
 ```
 
-Scar-only Stage 3 ablation:
+Exact-prior Stage 3-v1 and scar-only ablations:
 
 ```bash
+CARE_DATASET_ID=605 bash care_myocardium/scripts/prepare_scar_myo_roi_dataset.sh
+GPU=4 CARE_DATASET_ID=605 SCAR_ROI_EPOCHS=300 bash care_myocardium/scripts/train_scar_myo_roi_refiner.sh 0
+
 CARE_DATASET_ID=603 bash care_myocardium/scripts/prepare_scar_roi_dataset.sh
 GPU=4 SCAR_ROI_EPOCHS=300 bash care_myocardium/scripts/train_scar_roi_refiner.sh 0
 ```

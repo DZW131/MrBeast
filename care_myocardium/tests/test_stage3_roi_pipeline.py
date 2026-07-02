@@ -96,6 +96,45 @@ class Stage3ROIPipelineTests(unittest.TestCase):
         self.assertIn("stage2_myo_prediction", case)
         self.assertEqual(case["stage2_myo_voxels_in_crop"], 100)
 
+    def test_scar_stage3_can_use_dilated_stage1_proposal(self) -> None:
+        subprocess.run(
+            [
+                sys.executable,
+                str(GENERATOR),
+                "--target",
+                "scar",
+                "--dataset-root",
+                str(self.root),
+                "--stage1-pred-dir",
+                str(self.pred_dir),
+                "--stage2-myo-pred-dir",
+                str(self.myo_dir),
+                "--target-prior-mode",
+                "dilate_xy",
+                "--prior-dilation-xy",
+                "1",
+                "--output-dataset-id",
+                "606",
+                "--output-dataset-name",
+                "CARE_CineMyoPS_ScarMyoDilatedROI_ED",
+                "--min-xy",
+                "12",
+                "--margin-xy",
+                "1",
+                "--overwrite",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        out_dir = self.root / "nnUNet_raw" / "Dataset606_CARE_CineMyoPS_ScarMyoDilatedROI_ED"
+        dataset_json = json.loads((out_dir / "dataset.json").read_text())
+        self.assertEqual(dataset_json["channel_names"]["1"], "stage1_scar_dilated_prior")
+        proposal = np.asanyarray(nib.load(str(out_dir / "imagesTr" / "Case0001_0001.nii.gz")).dataobj)
+        self.assertEqual(int(proposal.sum()), 36)
+
     def test_restore_roi_prediction_pastes_crop_to_full_image(self) -> None:
         crop_dataset = self.root / "nnUNet_raw" / "Dataset604_CARE_CineMyoPS_MyoROI_ED"
         crop_images = crop_dataset / "imagesTr"

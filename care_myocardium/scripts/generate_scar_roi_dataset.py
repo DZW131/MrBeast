@@ -7,7 +7,7 @@ as input channels, and trains a binary ROI refiner on the cropped region.
 
 Channels:
     0000: ED image crop
-    0001: first-stage target prior, binary
+    0001: first-stage target prior or proposal
     0002: context prior. For scar Stage 3, this can be a refined Stage 2
           myocardium prior; otherwise it is the first-stage foreground.
 
@@ -112,6 +112,38 @@ def mask_from_labels(data: np.ndarray, label_ids: tuple[int, ...]) -> np.ndarray
     return np.isin(data, np.asarray(label_ids, dtype=data.dtype))
 
 
+def dilate_xy(mask: np.ndarray, iterations: int) -> np.ndarray:
+    out = mask.astype(bool)
+    for _ in range(max(0, int(iterations))):
+        padded = np.pad(out, ((1, 1), (1, 1), (0, 0)), mode="constant", constant_values=False)
+        expanded = np.zeros_like(out, dtype=bool)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                expanded |= padded[1 + dx:1 + dx + out.shape[0], 1 + dy:1 + dy + out.shape[1], :]
+        out = expanded
+    return out
+
+
+def transform_target_prior(mask: np.ndarray, mode: str, dilation_xy: int) -> np.ndarray:
+    if mode == "binary":
+        return mask.astype(bool)
+    if mode == "dilate_xy":
+        return dilate_xy(mask, dilation_xy)
+    if mode == "none":
+        return np.zeros_like(mask, dtype=bool)
+    raise ValueError(f"Unsupported target prior mode: {mode}")
+
+
+def target_channel_name(config: dict, mode: str) -> str:
+    if mode == "binary":
+        return config["target_channel_name"]
+    if mode == "dilate_xy":
+        return config["target_channel_name"].replace("_prior", "_dilated_prior")
+    if mode == "none":
+        return f"empty_{config['target_channel_name']}"
+    raise ValueError(f"Unsupported target prior mode: {mode}")
+
+
 def centered_bounds(
     start: int,
     end: int,
@@ -197,11 +229,17 @@ def save_like(
     nib.save(out, str(out_path))
 
 
-def write_dataset_json(dataset_dir: Path, num_training: int, config: dict, context_channel_name: str) -> None:
+def write_dataset_json(
+    dataset_dir: Path,
+    num_training: int,
+    target_channel_name_value: str,
+    config: dict,
+    context_channel_name: str,
+) -> None:
     payload = {
         "channel_names": {
             "0": "cine_ed_roi",
-            "1": config["target_channel_name"],
+            "1": target_channel_name_value,
             "2": context_channel_name,
         },
         "labels": {
@@ -231,6 +269,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dataset-name", default=None)
     p.add_argument("--margin-xy", type=int, default=48)
     p.add_argument("--min-xy", type=int, default=128)
+    p.add_argument(
+        "--target-prior-mode",
+        choices=("binary", "dilate_xy", "none"),
+        default="binary",
+        help="How to encode the stage-1 target prior channel.",
+    )
+    p.add_argument("--prior-dilation-xy", type=int, default=4)
     p.add_argument("--crop-full-z", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true")
@@ -244,6 +289,7 @@ def main() -> None:
     output_dataset_name = args.output_dataset_name or config["default_output_name"]
     use_stage2_myo_context = args.target == "scar" and args.stage2_myo_pred_dir is not None
     context_channel_name = "stage2_myo_prior" if use_stage2_myo_context else config["context_channel_name"]
+    target_channel_name_value = target_channel_name(config, args.target_prior_mode)
 
     ed_dir = args.dataset_root / "nnUNet_raw" / args.ed_dataset_name
     images_tr = ed_dir / "imagesTr"
@@ -269,6 +315,7 @@ def main() -> None:
     print(f"ed_dir       = {ed_dir}")
     print(f"stage1_pred  = {args.stage1_pred_dir}")
     print(f"stage2_myo   = {args.stage2_myo_pred_dir}")
+    print(f"prior_mode   = {args.target_prior_mode}")
     print(f"out_dir      = {out_dir}")
     print(f"cases        = {len(image_files)}")
     if args.dry_run:
@@ -310,7 +357,12 @@ def main() -> None:
         )
         slices = (sx, sy, sz)
         ed_crop = image[slices]
-        target_prior = mask_from_labels(pred[slices], config["proposal_label_ids"]).astype(np.float32)
+        binary_target_prior = mask_from_labels(pred[slices], config["proposal_label_ids"])
+        target_prior = transform_target_prior(
+            binary_target_prior,
+            args.target_prior_mode,
+            args.prior_dilation_xy,
+        ).astype(np.float32)
         context_prior = (
             (stage2_myo[slices] > 0).astype(np.float32)
             if use_stage2_myo_context
@@ -337,17 +389,21 @@ def main() -> None:
             "crop_shape": list(target_label.shape),
             config["voxel_key"]: int(target_label.sum()),
             config["prior_voxel_key"]: int(target_prior.sum()),
+            "target_prior_mode": args.target_prior_mode,
+            "prior_dilation_xy": args.prior_dilation_xy,
             "context_prior_channel": context_channel_name,
             "stage2_myo_voxels_in_crop": int(context_prior.sum()) if use_stage2_myo_context else 0,
         })
         print(f"{case_id}: {source} crop={crop_box} {config['voxel_key']}={int(target_label.sum())}")
 
-    write_dataset_json(out_dir, len(manifest), config, context_channel_name)
+    write_dataset_json(out_dir, len(manifest), target_channel_name_value, config, context_channel_name)
     manifest_payload = {
             "target": args.target,
             "ed_dataset": str(ed_dir),
             "stage1_pred_dir": str(args.stage1_pred_dir) if args.stage1_pred_dir else None,
             "stage2_myo_pred_dir": str(args.stage2_myo_pred_dir) if use_stage2_myo_context else None,
+            "target_prior_mode": args.target_prior_mode,
+            "prior_dilation_xy": args.prior_dilation_xy,
             "context_prior_channel": context_channel_name,
             "margin_xy": args.margin_xy,
             "min_xy": args.min_xy,
