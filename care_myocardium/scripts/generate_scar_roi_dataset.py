@@ -8,7 +8,8 @@ as input channels, and trains a binary ROI refiner on the cropped region.
 Channels:
     0000: ED image crop
     0001: first-stage target prior, binary
-    0002: first-stage heart/context prior, binary foreground
+    0002: context prior. For scar Stage 3, this can be a refined Stage 2
+          myocardium prior; otherwise it is the first-stage foreground.
 
 Labels:
     0 background
@@ -73,17 +74,28 @@ def case_id_from_image(path: Path) -> str:
     return stem[:-5] if stem.endswith("_0000") else stem
 
 
-def load_optional_pred(pred_dir: Path | None, case_id: str, shape: tuple[int, ...]) -> np.ndarray:
+def load_optional_pred(
+    pred_dir: Path | None,
+    case_id: str,
+    shape: tuple[int, ...],
+    *,
+    required: bool = False,
+    label: str = "prediction",
+) -> np.ndarray:
     if pred_dir is None:
+        if required:
+            raise FileNotFoundError(f"Missing required {label} directory for {case_id}")
         return np.zeros(shape, dtype=np.int16)
     pred_path = pred_dir / f"{case_id}.nii.gz"
     if not pred_path.is_file():
         pred_path = pred_dir / f"{case_id}_pred.nii.gz"
     if not pred_path.is_file():
+        if required:
+            raise FileNotFoundError(f"Missing {label} for {case_id} in {pred_dir}")
         return np.zeros(shape, dtype=np.int16)
     pred = np.asanyarray(nib.load(str(pred_path)).dataobj).astype(np.int16)
     if pred.shape != shape:
-        raise ValueError(f"{pred_path}: shape {pred.shape} does not match image shape {shape}")
+        raise ValueError(f"{label} {pred_path}: shape {pred.shape} does not match image shape {shape}")
     return pred
 
 
@@ -185,12 +197,12 @@ def save_like(
     nib.save(out, str(out_path))
 
 
-def write_dataset_json(dataset_dir: Path, num_training: int, config: dict) -> None:
+def write_dataset_json(dataset_dir: Path, num_training: int, config: dict, context_channel_name: str) -> None:
     payload = {
         "channel_names": {
             "0": "cine_ed_roi",
             "1": config["target_channel_name"],
-            "2": config["context_channel_name"],
+            "2": context_channel_name,
         },
         "labels": {
             "background": 0,
@@ -209,6 +221,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     p.add_argument("--ed-dataset-name", default=DEFAULT_ED_DATASET)
     p.add_argument("--stage1-pred-dir", type=Path, default=None)
+    p.add_argument(
+        "--stage2-myo-pred-dir",
+        type=Path,
+        default=None,
+        help="Optional full-image Stage 2 myocardium predictions for scar Stage 3.",
+    )
     p.add_argument("--output-dataset-id", type=int, default=None)
     p.add_argument("--output-dataset-name", default=None)
     p.add_argument("--margin-xy", type=int, default=48)
@@ -224,6 +242,8 @@ def main() -> None:
     config = TARGET_CONFIGS[args.target]
     output_dataset_id = args.output_dataset_id or config["default_output_id"]
     output_dataset_name = args.output_dataset_name or config["default_output_name"]
+    use_stage2_myo_context = args.target == "scar" and args.stage2_myo_pred_dir is not None
+    context_channel_name = "stage2_myo_prior" if use_stage2_myo_context else config["context_channel_name"]
 
     ed_dir = args.dataset_root / "nnUNet_raw" / args.ed_dataset_name
     images_tr = ed_dir / "imagesTr"
@@ -248,6 +268,7 @@ def main() -> None:
     print(f"target       = {args.target}")
     print(f"ed_dir       = {ed_dir}")
     print(f"stage1_pred  = {args.stage1_pred_dir}")
+    print(f"stage2_myo   = {args.stage2_myo_pred_dir}")
     print(f"out_dir      = {out_dir}")
     print(f"cases        = {len(image_files)}")
     if args.dry_run:
@@ -267,7 +288,14 @@ def main() -> None:
         label = np.asanyarray(label_img.dataobj).astype(np.int16)
         if image.shape != label.shape:
             raise ValueError(f"{case_id}: image shape {image.shape} != label shape {label.shape}")
-        pred = load_optional_pred(args.stage1_pred_dir, case_id, label.shape)
+        pred = load_optional_pred(args.stage1_pred_dir, case_id, label.shape, label="stage1 prediction")
+        stage2_myo = load_optional_pred(
+            args.stage2_myo_pred_dir,
+            case_id,
+            label.shape,
+            required=use_stage2_myo_context,
+            label="stage2 myocardium prediction",
+        )
 
         sx, sy, sz, source = choose_crop(
             pred=pred,
@@ -283,12 +311,16 @@ def main() -> None:
         slices = (sx, sy, sz)
         ed_crop = image[slices]
         target_prior = mask_from_labels(pred[slices], config["proposal_label_ids"]).astype(np.float32)
-        heart_prior = (pred[slices] > 0).astype(np.float32)
+        context_prior = (
+            (stage2_myo[slices] > 0).astype(np.float32)
+            if use_stage2_myo_context
+            else (pred[slices] > 0).astype(np.float32)
+        )
         target_label = mask_from_labels(label[slices], config["target_label_ids"]).astype(np.int16)
 
         save_like(ed_crop, img, slices, out_images / f"{case_id}_0000.nii.gz", img.get_data_dtype())
         save_like(target_prior, img, slices, out_images / f"{case_id}_0001.nii.gz", np.float32)
-        save_like(heart_prior, img, slices, out_images / f"{case_id}_0002.nii.gz", np.float32)
+        save_like(context_prior, img, slices, out_images / f"{case_id}_0002.nii.gz", np.float32)
         save_like(target_label, label_img, slices, out_labels / f"{case_id}.nii.gz", np.int16)
 
         crop_box = [[s.start, s.stop] for s in slices]
@@ -298,20 +330,25 @@ def main() -> None:
             "source_image": str(img_path),
             "source_label": str(label_path),
             "stage1_prediction": str((args.stage1_pred_dir / f"{case_id}.nii.gz") if args.stage1_pred_dir else ""),
+            "stage2_myo_prediction": str((args.stage2_myo_pred_dir / f"{case_id}.nii.gz") if use_stage2_myo_context else ""),
             "proposal_source": source,
             "crop_box_xyz": crop_box,
             "source_shape": list(label.shape),
             "crop_shape": list(target_label.shape),
             config["voxel_key"]: int(target_label.sum()),
             config["prior_voxel_key"]: int(target_prior.sum()),
+            "context_prior_channel": context_channel_name,
+            "stage2_myo_voxels_in_crop": int(context_prior.sum()) if use_stage2_myo_context else 0,
         })
         print(f"{case_id}: {source} crop={crop_box} {config['voxel_key']}={int(target_label.sum())}")
 
-    write_dataset_json(out_dir, len(manifest), config)
+    write_dataset_json(out_dir, len(manifest), config, context_channel_name)
     manifest_payload = {
             "target": args.target,
             "ed_dataset": str(ed_dir),
             "stage1_pred_dir": str(args.stage1_pred_dir) if args.stage1_pred_dir else None,
+            "stage2_myo_pred_dir": str(args.stage2_myo_pred_dir) if use_stage2_myo_context else None,
+            "context_prior_channel": context_channel_name,
             "margin_xy": args.margin_xy,
             "min_xy": args.min_xy,
             "crop_full_z": args.crop_full_z,
