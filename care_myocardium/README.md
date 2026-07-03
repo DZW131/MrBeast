@@ -135,6 +135,33 @@ FLOW_MODE=none bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
 FLOW_FRAME_STRIDE=2 bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
 ```
 
+First/last ED cycle-consistency variant:
+
+The official CineMyoPS labels annotate the first ED frame. The final cine frame
+is also visually close to ED but has no label. This trainer keeps Dataset608 as
+input and adds a closed-loop ED consistency regularizer: the normal forward view
+uses frame 0 as the ED reference, while the reversed cine view uses the final
+frame as the ED reference and recomputes the deterministic motion proxy
+channels. The trainer then enforces bidirectional first-ED <-> last-ED soft
+prediction consistency with confidence gating and extra scar weighting. The
+supervised label loss on frame 0 remains unchanged.
+
+```bash
+# after Dataset608 has been created and preprocessed
+GPU=0 bash care_myocardium/scripts/train_ed_cycle_nnunet.sh 0
+```
+
+Useful knobs:
+
+```bash
+ED_CYCLE_EPOCHS=300 \
+ED_CYCLE_WEIGHT=0.2 \
+ED_CYCLE_RAMP_EPOCHS=40 \
+ED_CYCLE_CONFIDENCE=0.6 \
+ED_CYCLE_SCAR_WEIGHT=2.0 \
+GPU=0 bash care_myocardium/scripts/train_ed_cycle_nnunet.sh 0
+```
+
 SAM2-inspired cine memory variant:
 
 This keeps nnU-Net as the segmentation backbone but prepends a lightweight
