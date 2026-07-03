@@ -124,8 +124,11 @@ bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
 # Train the motion-texture nnU-Net baseline.
 GPU=0 bash care_myocardium/scripts/train_motion_texture_nnunet.sh 0
 
-# Paper-aligned 400-epoch OpenCV/Farneback motion-texture run.
+# Quick 400-epoch OpenCV/Farneback motion-texture ablation.
 CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_400_nnunet.sh 0
+
+# Paper-length 1000-epoch OpenCV/Farneback motion-texture run.
+CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_1000_nnunet.sh 0
 ```
 
 Useful knobs:
