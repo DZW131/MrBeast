@@ -31,7 +31,7 @@ EXTRA=()
 if [[ "${CONTINUE:-0}" == "1" ]]; then EXTRA+=(--c); fi
 EXTRA+=("$@")
 
-if [[ "${CARE_DATASET_ID}" == "602" ]]; then
+if [[ "${CARE_DATASET_ID}" == "602" || "${CARE_DATASET_ID}" == "608" ]]; then
   export nnUNet_n_proc_DA="${nnUNet_n_proc_DA:-2}"
   export nnUNet_compile="${nnUNet_compile:-f}"
 fi

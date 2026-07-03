@@ -98,6 +98,43 @@ larger than the ED-only baseline. The training script defaults this dataset to
 server benchmark found this stable on the CARE all-frame `.b2nd` cases while
 being substantially faster than single-threaded augmentation.
 
+Motion-texture fusion variant:
+
+This is the nnU-Net adaptation of the contrast-free cine scar segmentation idea
+from arXiv:2501.05241. It keeps nnU-Net as the segmentation backbone, but makes
+the input closer to the paper: all cine frames provide temporal texture, and
+extra channels encode ED-referenced motion cues. By default Dataset608 adds five
+temporal difference/statistics channels plus four aggregated Farneback optical
+flow channels:
+
+| Channel family | Meaning |
+| --- | --- |
+| `cine_t00..cine_t29` | Full cine texture sequence |
+| `temporal_std` | Per-voxel temporal intensity variation |
+| `max_abs_diff_from_ed` | Largest absolute difference from the ED frame |
+| `mean_abs_diff_from_ed` | Average absolute difference from the ED frame |
+| `signed_diff_at_max_abs_diff` | Signed intensity change at the strongest motion frame |
+| `normalized_max_diff_frame` | Frame index of the strongest ED-referenced change |
+| `farneback_*_to_ed` | 2D slice-wise optical-flow summary from cine frames to ED |
+
+```bash
+# Create and preprocess Dataset608_CARE_CineMyoPS_MotionTexture.
+bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
+
+# Train the motion-texture nnU-Net baseline.
+GPU=0 bash care_myocardium/scripts/train_motion_texture_nnunet.sh 0
+```
+
+Useful knobs:
+
+```bash
+# Dependency-free ablation: only cine frames + ED difference motion proxies.
+FLOW_MODE=none bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
+
+# Faster optical-flow preprocessing: use every second cine frame for flow.
+FLOW_FRAME_STRIDE=2 bash care_myocardium/scripts/prepare_motion_texture_dataset.sh
+```
+
 SAM2-inspired cine memory variant:
 
 This keeps nnU-Net as the segmentation backbone but prepends a lightweight
