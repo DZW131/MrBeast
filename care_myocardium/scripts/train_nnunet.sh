@@ -12,6 +12,7 @@ Environment overrides:
   GPU           CUDA_VISIBLE_DEVICES (default 0)
   CONFIGURATION 3d_fullres (default)
   TRAINER       nnUNetTrainer (default)
+  NUM_GPUS      pass -num_gpus to nnUNetv2_train for DDP/multi-GPU training
   CONTINUE=1    resume from latest checkpoint
   nnUNet_n_proc_DA data augmentation worker count
   nnUNet_compile   torch.compile toggle
@@ -29,6 +30,7 @@ CONFIGURATION="${CONFIGURATION:-3d_fullres}"
 TRAINER="${TRAINER:-nnUNetTrainer}"
 EXTRA=()
 if [[ "${CONTINUE:-0}" == "1" ]]; then EXTRA+=(--c); fi
+if [[ -n "${NUM_GPUS:-}" ]]; then EXTRA+=(-num_gpus "${NUM_GPUS}"); fi
 EXTRA+=("$@")
 
 if [[ "${CARE_DATASET_ID}" == "602" || "${CARE_DATASET_ID}" == "608" ]]; then
@@ -38,7 +40,7 @@ fi
 
 train_one() {
   local f="$1"
-  echo "[CARE train] dataset_id=${CARE_DATASET_ID} fold=${f} gpu=${GPU} trainer=${TRAINER} n_proc_DA=${nnUNet_n_proc_DA:-default} compile=${nnUNet_compile:-default}"
+  echo "[CARE train] dataset_id=${CARE_DATASET_ID} fold=${f} gpu=${GPU} num_gpus=${NUM_GPUS:-1} trainer=${TRAINER} n_proc_DA=${nnUNet_n_proc_DA:-default} compile=${nnUNet_compile:-default}"
   CUDA_VISIBLE_DEVICES="${GPU}" nnUNetv2_train \
     "${CARE_DATASET_ID}" "${CONFIGURATION}" "${f}" \
     -tr "${TRAINER}" "${EXTRA[@]}"

@@ -14,6 +14,7 @@ Expected dataset:
 
 Environment overrides:
   GPU                   CUDA_VISIBLE_DEVICES (default 0)
+  NUM_GPUS              pass -num_gpus to nnUNetv2_train for DDP/multi-GPU training
   CARE_DATASET_ID       default 608
   ED_CYCLE_EPOCHS       default 300
   ED_CYCLE_WEIGHT       default 0.2
