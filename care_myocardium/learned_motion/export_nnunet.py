@@ -73,7 +73,7 @@ def dataset_name_with_id(dataset_id: int, dataset_name: str) -> str:
 
 
 def load_motion_model(checkpoint: Path, device: torch.device) -> MotionUNet:
-    payload = torch.load(checkpoint, map_location=device)
+    payload = torch.load(checkpoint, map_location=device, weights_only=False)
     cfg = payload.get("config", {})
     model = MotionUNet(
         in_channels=2,

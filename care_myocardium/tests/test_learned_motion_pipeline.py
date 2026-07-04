@@ -12,6 +12,7 @@ from care_myocardium.learned_motion.data import MotionPairDataset
 from care_myocardium.learned_motion.export_nnunet import (
     build_learned_motion_channel_names,
     center_crop_or_pad_volume,
+    load_motion_model,
     predict_case_flows,
 )
 from care_myocardium.learned_motion.model import MotionUNet
@@ -66,6 +67,26 @@ class LearnedMotionPipelineTests(unittest.TestCase):
         flow = net(x)
 
         self.assertEqual(tuple(flow.shape), (2, 2, 16, 16))
+
+    def test_motion_checkpoint_loader_accepts_trusted_training_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint.pth"
+            net = MotionUNet(in_channels=2, base_channels=4, max_flow=5.0)
+            torch.save(
+                {
+                    "config": {
+                        "base_channels": 4,
+                        "max_flow": 5.0,
+                        "source_root": Path(tmp),
+                    },
+                    "model": net.state_dict(),
+                },
+                checkpoint,
+            )
+
+            loaded = load_motion_model(checkpoint, torch.device("cpu"))
+
+            self.assertIsInstance(loaded, MotionUNet)
 
     def test_motion_pair_dataset_samples_ed_to_each_non_ed_frame(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
