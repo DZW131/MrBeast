@@ -129,6 +129,9 @@ CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_400_
 
 # Paper-length 1000-epoch OpenCV/Farneback motion-texture run.
 CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_1000_nnunet.sh 0
+
+# 300-epoch OpenCV/Farneback motion-texture run with first/last ED cycle consistency.
+CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_ed_cycle_nnunet.sh 0
 ```
 
 Useful knobs:
