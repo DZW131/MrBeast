@@ -9,7 +9,11 @@ import numpy as np
 import torch
 
 from care_myocardium.learned_motion.data import MotionPairDataset
-from care_myocardium.learned_motion.export_nnunet import build_learned_motion_channel_names
+from care_myocardium.learned_motion.export_nnunet import (
+    build_learned_motion_channel_names,
+    center_crop_or_pad_volume,
+    predict_case_flows,
+)
 from care_myocardium.learned_motion.model import MotionUNet
 from care_myocardium.learned_motion.spatial import smoothness_loss, warp_2d
 
@@ -41,6 +45,8 @@ class LearnedMotionPipelineTests(unittest.TestCase):
         self.assertTrue(export_script.exists())
         self.assertTrue(train_script.exists())
         self.assertTrue(trainer.exists())
+        self.assertIn("LEARNED_MOTION_IMAGE_SIZE", export_script.read_text(encoding="utf-8"))
+        self.assertIn("--image-size", export_script.read_text(encoding="utf-8"))
         self.assertIn("LearnedMotionSeg400EpochTrainer", train_script.read_text(encoding="utf-8"))
         self.assertIn('LEARNED_MOTION_SEG_EPOCHS", "400"', trainer.read_text(encoding="utf-8"))
 
@@ -93,6 +99,34 @@ class LearnedMotionPipelineTests(unittest.TestCase):
 
             self.assertEqual(tuple(sample["fixed"].shape), (1, 8, 8))
             self.assertEqual(tuple(sample["moving"].shape), (1, 8, 8))
+
+    def test_export_volume_crop_pad_matches_motion_net_size(self) -> None:
+        volume = np.ones((5, 7, 2), dtype=np.int16)
+
+        cropped = center_crop_or_pad_volume(volume, 8, dtype=np.int16)
+
+        self.assertEqual(cropped.shape, (8, 8, 2))
+        self.assertEqual(cropped.dtype, np.int16)
+        self.assertEqual(int(cropped.sum()), int(volume.sum()))
+
+    def test_export_motion_prediction_uses_fixed_motion_net_size(self) -> None:
+        class ZeroFlow(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.zeros((x.shape[0], 2, x.shape[2], x.shape[3]), dtype=x.dtype, device=x.device)
+
+        cine = np.random.default_rng(0).normal(size=(5, 7, 2, 3)).astype(np.float32)
+
+        flows = predict_case_flows(
+            ZeroFlow(),
+            cine,
+            torch.device("cpu"),
+            num_frames=3,
+            ed_frame_index=0,
+            image_size=8,
+        )
+
+        self.assertEqual(len(flows), 4)
+        self.assertTrue(all(flow.shape == (8, 8, 2) for flow in flows))
 
     def test_learned_motion_channel_names_keep_per_frame_displacements(self) -> None:
         names = build_learned_motion_channel_names(num_frames=4)

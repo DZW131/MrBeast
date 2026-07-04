@@ -10,7 +10,7 @@ import nibabel as nib
 import numpy as np
 import torch
 
-from .data import iter_cine_cases, normalize_pair
+from .data import center_crop_or_pad, iter_cine_cases, normalize_pair
 from .model import MotionUNet
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -42,6 +42,30 @@ def make_3d_image(data: np.ndarray, ref_img: nib.Nifti1Image, dtype: np.dtype | 
     return out
 
 
+def center_crop_or_pad_volume(volume: np.ndarray, size: int | None, dtype: np.dtype | type | None = None) -> np.ndarray:
+    arr = np.asarray(volume)
+    out_dtype = dtype if dtype is not None else arr.dtype
+    if size is None:
+        return arr.astype(out_dtype, copy=False)
+    if arr.ndim < 2:
+        raise ValueError(f"Expected at least 2D array, got shape {arr.shape}")
+    h, w = arr.shape[:2]
+    trailing = arr.shape[2:]
+    out = np.zeros((int(size), int(size), *trailing), dtype=out_dtype)
+    src_h = min(h, int(size))
+    src_w = min(w, int(size))
+    src_y0 = max((h - int(size)) // 2, 0)
+    src_x0 = max((w - int(size)) // 2, 0)
+    dst_y0 = max((int(size) - h) // 2, 0)
+    dst_x0 = max((int(size) - w) // 2, 0)
+    out[dst_y0 : dst_y0 + src_h, dst_x0 : dst_x0 + src_w, ...] = arr[
+        src_y0 : src_y0 + src_h,
+        src_x0 : src_x0 + src_w,
+        ...,
+    ].astype(out_dtype, copy=False)
+    return out
+
+
 def dataset_name_with_id(dataset_id: int, dataset_name: str) -> str:
     if dataset_name.startswith(f"Dataset{dataset_id:03d}_"):
         return dataset_name
@@ -69,16 +93,22 @@ def predict_case_flows(
     device: torch.device,
     num_frames: int,
     ed_frame_index: int = 0,
+    image_size: int | None = None,
 ) -> list[np.ndarray]:
     h, w, z, total_frames = cine.shape
     n_frames = min(total_frames, num_frames)
-    flows = [np.zeros((h, w, z), dtype=np.float32) for _ in range((n_frames - 1) * 2)]
+    out_h = int(image_size) if image_size else h
+    out_w = int(image_size) if image_size else w
+    flows = [np.zeros((out_h, out_w, z), dtype=np.float32) for _ in range((n_frames - 1) * 2)]
     out_idx = 0
     for t in range(1, n_frames):
-        dx = np.zeros((h, w, z), dtype=np.float32)
-        dy = np.zeros((h, w, z), dtype=np.float32)
+        dx = np.zeros((out_h, out_w, z), dtype=np.float32)
+        dy = np.zeros((out_h, out_w, z), dtype=np.float32)
         for zi in range(z):
             fixed, moving = normalize_pair(cine[:, :, zi, ed_frame_index], cine[:, :, zi, t])
+            if image_size:
+                fixed = center_crop_or_pad(fixed, int(image_size))
+                moving = center_crop_or_pad(moving, int(image_size))
             x = torch.from_numpy(np.stack([fixed, moving])[None]).to(device=device, dtype=torch.float32)
             flow = model(x)[0].detach().cpu().numpy()
             dx[:, :, zi] = flow[0]
@@ -111,6 +141,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset-name", default="CARE_CineMyoPS_LearnedMotionTexture")
     p.add_argument("--num-frames", type=int, default=30)
     p.add_argument("--ed-frame-index", type=int, default=0)
+    p.add_argument("--image-size", type=int, default=192)
     p.add_argument("--device", default="cuda")
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
@@ -147,11 +178,16 @@ def main() -> None:
             raise ValueError(f"{case_id} has {n_frames} frames, expected {args.num_frames}")
 
         for t in range(args.num_frames):
-            nib.save(make_3d_image(cine[..., t], cine_img, np.float32), str(images_tr / f"{case_id}_{t:04d}.nii.gz"))
-        for offset, flow in enumerate(predict_case_flows(model, cine, device, args.num_frames, args.ed_frame_index), start=args.num_frames):
+            frame = center_crop_or_pad_volume(cine[..., t], args.image_size, np.float32)
+            nib.save(make_3d_image(frame, cine_img, np.float32), str(images_tr / f"{case_id}_{t:04d}.nii.gz"))
+        for offset, flow in enumerate(
+            predict_case_flows(model, cine, device, args.num_frames, args.ed_frame_index, args.image_size),
+            start=args.num_frames,
+        ):
             nib.save(make_3d_image(flow, cine_img, np.float32), str(images_tr / f"{case_id}_{offset:04d}.nii.gz"))
 
         label_arr = remap_label(np.asanyarray(gd_img.dataobj), remap)
+        label_arr = center_crop_or_pad_volume(label_arr, args.image_size, np.int16)
         label_nii = nib.Nifti1Image(label_arr, gd_img.affine, gd_img.header)
         label_nii.header.set_data_dtype(np.int16)
         nib.save(label_nii, str(labels_tr / f"{case_id}.nii.gz"))
@@ -165,6 +201,7 @@ def main() -> None:
                 "motion_checkpoint": str(args.checkpoint),
                 "ed_frame_index": args.ed_frame_index,
                 "num_frames": args.num_frames,
+                "image_size": args.image_size,
                 "channel_names": channel_names,
                 "cases": manifest,
             },
