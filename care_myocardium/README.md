@@ -132,6 +132,16 @@ CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_1000
 
 # 300-epoch OpenCV/Farneback motion-texture run with first/last ED cycle consistency.
 CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_ed_cycle_nnunet.sh 0
+
+# Strict learned-motion route from the MTI-MyoScarSeg paper:
+# 1) train Motion-Net with ED-to-frame registration for 1000 epochs.
+GPU=0,1,2,3 MOTION_NET_GPUS=4 bash care_myocardium/scripts/train_motion_net.sh
+
+# 2) export cine frames + per-frame learned displacement fields as Dataset610.
+bash care_myocardium/scripts/prepare_learned_motion_dataset.sh
+
+# 3) train Seg-Net for 400 epochs on learned motion + cine texture channels.
+CARE_DATASET_ID=610 GPU=0 bash care_myocardium/scripts/train_learned_motion_seg_nnunet.sh 0
 ```
 
 Useful knobs:
