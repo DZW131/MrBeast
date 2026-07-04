@@ -6,7 +6,10 @@ import numpy as np
 import torch
 from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 
-from scar_checkpointing import best_scar_from_history, scar_dice_from_pseudo_dice, should_update_best_scar
+try:
+    from .scar_checkpointing import best_scar_from_history, scar_dice_from_pseudo_dice, should_update_best_scar
+except ImportError:
+    from scar_checkpointing import best_scar_from_history, scar_dice_from_pseudo_dice, should_update_best_scar
 
 
 class LearnedMotionSeg400EpochTrainer(nnUNetTrainer):

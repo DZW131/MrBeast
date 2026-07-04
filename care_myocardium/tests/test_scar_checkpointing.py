@@ -42,6 +42,15 @@ class ScarCheckpointingTests(unittest.TestCase):
         self.assertIn("checkpoint_best_scar.pth", body)
         self.assertIn("Best scar pseudo Dice", body)
 
+    def test_trainer_supports_package_and_external_import_styles(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        trainer = repo / "care_myocardium" / "nnunet_ext" / "LearnedMotionSeg400EpochTrainer.py"
+
+        body = trainer.read_text(encoding="utf-8")
+
+        self.assertIn("from .scar_checkpointing", body)
+        self.assertIn("from scar_checkpointing", body)
+
 
 if __name__ == "__main__":
     unittest.main()
