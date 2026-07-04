@@ -16,6 +16,7 @@ Environment overrides:
   MOTION_NET_GPUS      number of DDP processes; default derived from GPU
   MOTION_NET_WORKERS   default 4
   MOTION_NET_LR        default 5e-4
+  MOTION_NET_IMAGE_SIZE default 192
   SMOOTH_WEIGHT        default 0.05
   CACHE_IN_MEMORY=1    keep cine volumes in RAM per worker
   RESUME=1             resume checkpoint_latest.pth
@@ -37,6 +38,7 @@ MOTION_NET_EPOCHS="${MOTION_NET_EPOCHS:-1000}"
 MOTION_NET_BATCH="${MOTION_NET_BATCH:-16}"
 MOTION_NET_WORKERS="${MOTION_NET_WORKERS:-4}"
 MOTION_NET_LR="${MOTION_NET_LR:-0.0005}"
+MOTION_NET_IMAGE_SIZE="${MOTION_NET_IMAGE_SIZE:-192}"
 SMOOTH_WEIGHT="${SMOOTH_WEIGHT:-0.05}"
 
 EXTRA=()
@@ -56,5 +58,6 @@ CUDA_VISIBLE_DEVICES="${GPU}" torchrun --standalone --nnodes=1 --nproc_per_node=
   --batch-size "${MOTION_NET_BATCH}" \
   --lr "${MOTION_NET_LR}" \
   --smooth-weight "${SMOOTH_WEIGHT}" \
+  --image-size "${MOTION_NET_IMAGE_SIZE}" \
   --num-workers "${MOTION_NET_WORKERS}" \
   "${EXTRA[@]}"

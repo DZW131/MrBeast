@@ -52,6 +52,22 @@ def normalize_pair(fixed: np.ndarray, moving: np.ndarray) -> tuple[np.ndarray, n
     return pair[0], pair[1]
 
 
+def center_crop_or_pad(slice_2d: np.ndarray, size: int) -> np.ndarray:
+    h, w = slice_2d.shape
+    out = np.zeros((size, size), dtype=np.float32)
+    src_h = min(h, size)
+    src_w = min(w, size)
+    src_y0 = max((h - size) // 2, 0)
+    src_x0 = max((w - size) // 2, 0)
+    dst_y0 = max((size - h) // 2, 0)
+    dst_x0 = max((size - w) // 2, 0)
+    out[dst_y0 : dst_y0 + src_h, dst_x0 : dst_x0 + src_w] = slice_2d[
+        src_y0 : src_y0 + src_h,
+        src_x0 : src_x0 + src_w,
+    ]
+    return out
+
+
 class MotionPairDataset(Dataset):
     """ED-to-frame 2D registration pairs from 4D CARE cine NIfTI files."""
 
@@ -60,11 +76,13 @@ class MotionPairDataset(Dataset):
         data_root: Path,
         num_frames: int = 30,
         ed_frame_index: int = 0,
+        image_size: int | None = None,
         cache_in_memory: bool = False,
     ):
         self.data_root = Path(data_root)
         self.num_frames = int(num_frames)
         self.ed_frame_index = int(ed_frame_index)
+        self.image_size = int(image_size) if image_size else None
         self.cache_in_memory = bool(cache_in_memory)
         self._cache: dict[Path, np.ndarray] = {}
         self.records: list[MotionPairRecord] = []
@@ -101,6 +119,9 @@ class MotionPairDataset(Dataset):
             cine[:, :, rec.slice_index, self.ed_frame_index],
             cine[:, :, rec.slice_index, rec.frame_index],
         )
+        if self.image_size:
+            fixed = center_crop_or_pad(fixed, self.image_size)
+            moving = center_crop_or_pad(moving, self.image_size)
         return {
             "fixed": torch.from_numpy(fixed[None]),
             "moving": torch.from_numpy(moving[None]),

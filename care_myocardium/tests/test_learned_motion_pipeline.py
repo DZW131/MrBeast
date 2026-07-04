@@ -81,6 +81,19 @@ class LearnedMotionPipelineTests(unittest.TestCase):
             self.assertEqual(sample["case_id"], "Case0001")
             self.assertIn(sample["frame_index"], {1, 2, 3})
 
+    def test_motion_pair_dataset_can_center_crop_or_pad_to_fixed_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "CAREdatasets" / "Myo_train" / "CineMyoPS_train" / "center_alpha"
+            cine = np.ones((5, 7, 1, 3), dtype=np.float32)
+            save_nii(root / "Case0001_Cine.nii.gz", cine)
+            save_nii(root / "Case0001_gd.nii.gz", np.zeros((5, 7, 1), dtype=np.int16))
+
+            dataset = MotionPairDataset(Path(tmp) / "CAREdatasets", num_frames=3, image_size=8)
+            sample = dataset[0]
+
+            self.assertEqual(tuple(sample["fixed"].shape), (1, 8, 8))
+            self.assertEqual(tuple(sample["moving"].shape), (1, 8, 8))
+
     def test_learned_motion_channel_names_keep_per_frame_displacements(self) -> None:
         names = build_learned_motion_channel_names(num_frames=4)
 

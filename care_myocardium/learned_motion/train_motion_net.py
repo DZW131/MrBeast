@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--smooth-weight", type=float, default=0.05)
     p.add_argument("--num-frames", type=int, default=30)
     p.add_argument("--ed-frame-index", type=int, default=0)
+    p.add_argument("--image-size", type=int, default=192)
     p.add_argument("--base-channels", type=int, default=16)
     p.add_argument("--max-flow", type=float, default=12.0)
     p.add_argument("--num-workers", type=int, default=4)
@@ -155,7 +156,7 @@ def main() -> None:
     config = vars(args).copy()
     config.update({"world_size": world_size})
 
-    dataset = MotionPairDataset(args.data_root, args.num_frames, args.ed_frame_index, args.cache_in_memory)
+    dataset = MotionPairDataset(args.data_root, args.num_frames, args.ed_frame_index, args.image_size, args.cache_in_memory)
     train_idx, val_idx = split_indices_by_case(dataset, args.val_fraction)
     train_set = Subset(dataset, train_idx)
     val_set = Subset(dataset, val_idx) if val_idx else None
