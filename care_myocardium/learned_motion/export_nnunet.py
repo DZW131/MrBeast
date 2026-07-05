@@ -25,11 +25,28 @@ from convert_cine_myops_to_nnunet import (  # noqa: E402
 )
 
 
-def build_learned_motion_channel_names(num_frames: int) -> list[str]:
-    names = [f"cine_t{t:02d}" for t in range(num_frames)]
-    for t in range(1, num_frames):
-        names.extend([f"motion_t{t:02d}_dx", f"motion_t{t:02d}_dy"])
-    return names
+FUSION_MODE_RAW_STACK = "raw_stack"
+FUSION_MODE_FRAMEWISE_CONCAT = "framewise_concat"
+FUSION_MODES = (FUSION_MODE_RAW_STACK, FUSION_MODE_FRAMEWISE_CONCAT)
+
+
+def build_learned_motion_channel_names(
+    num_frames: int,
+    fusion_mode: str = FUSION_MODE_RAW_STACK,
+) -> list[str]:
+    if fusion_mode == FUSION_MODE_RAW_STACK:
+        names = [f"cine_t{t:02d}" for t in range(num_frames)]
+        for t in range(1, num_frames):
+            names.extend([f"motion_t{t:02d}_dx", f"motion_t{t:02d}_dy"])
+        return names
+
+    if fusion_mode == FUSION_MODE_FRAMEWISE_CONCAT:
+        names = ["cine_t00"]
+        for t in range(1, num_frames):
+            names.extend([f"cine_t{t:02d}", f"motion_t{t:02d}_dx", f"motion_t{t:02d}_dy"])
+        return names
+
+    raise ValueError(f"Unsupported fusion_mode={fusion_mode!r}; expected one of {FUSION_MODES}")
 
 
 def make_3d_image(data: np.ndarray, ref_img: nib.Nifti1Image, dtype: np.dtype | type) -> nib.Nifti1Image:
@@ -87,20 +104,19 @@ def load_motion_model(checkpoint: Path, device: torch.device) -> MotionUNet:
 
 
 @torch.no_grad()
-def predict_case_flows(
+def predict_case_frame_flows(
     model: MotionUNet,
     cine: np.ndarray,
     device: torch.device,
     num_frames: int,
     ed_frame_index: int = 0,
     image_size: int | None = None,
-) -> list[np.ndarray]:
+) -> list[tuple[int, np.ndarray, np.ndarray]]:
     h, w, z, total_frames = cine.shape
     n_frames = min(total_frames, num_frames)
     out_h = int(image_size) if image_size else h
     out_w = int(image_size) if image_size else w
-    flows = [np.zeros((out_h, out_w, z), dtype=np.float32) for _ in range((n_frames - 1) * 2)]
-    out_idx = 0
+    flows: list[tuple[int, np.ndarray, np.ndarray]] = []
     for t in range(1, n_frames):
         dx = np.zeros((out_h, out_w, z), dtype=np.float32)
         dy = np.zeros((out_h, out_w, z), dtype=np.float32)
@@ -113,10 +129,43 @@ def predict_case_flows(
             flow = model(x)[0].detach().cpu().numpy()
             dx[:, :, zi] = flow[0]
             dy[:, :, zi] = flow[1]
-        flows[out_idx] = dx
-        flows[out_idx + 1] = dy
-        out_idx += 2
+        flows.append((t, dx, dy))
     return flows
+
+
+@torch.no_grad()
+def predict_case_flows(
+    model: MotionUNet,
+    cine: np.ndarray,
+    device: torch.device,
+    num_frames: int,
+    ed_frame_index: int = 0,
+    image_size: int | None = None,
+) -> list[np.ndarray]:
+    flows: list[np.ndarray] = []
+    for _, dx, dy in predict_case_frame_flows(model, cine, device, num_frames, ed_frame_index, image_size):
+        flows.extend([dx, dy])
+    return flows
+
+
+def iter_export_channels(
+    cine_frames: list[np.ndarray],
+    frame_flows: list[tuple[int, np.ndarray, np.ndarray]],
+    fusion_mode: str,
+) -> list[np.ndarray]:
+    if fusion_mode == FUSION_MODE_RAW_STACK:
+        channels = list(cine_frames)
+        for _, dx, dy in frame_flows:
+            channels.extend([dx, dy])
+        return channels
+
+    if fusion_mode == FUSION_MODE_FRAMEWISE_CONCAT:
+        channels = [cine_frames[0]]
+        for t, dx, dy in frame_flows:
+            channels.extend([cine_frames[t], dx, dy])
+        return channels
+
+    raise ValueError(f"Unsupported fusion_mode={fusion_mode!r}; expected one of {FUSION_MODES}")
 
 
 def write_dataset_json(dataset_dir: Path, cfg: dict, num_training: int, channel_names: list[str]) -> None:
@@ -142,6 +191,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-frames", type=int, default=30)
     p.add_argument("--ed-frame-index", type=int, default=0)
     p.add_argument("--image-size", type=int, default=192)
+    p.add_argument("--fusion-mode", choices=FUSION_MODES, default=FUSION_MODE_RAW_STACK,
+                   help="raw_stack keeps the legacy all-cine-then-all-motion layout; "
+                        "framewise_concat exports ED followed by (frame, dx, dy) groups.")
     p.add_argument("--device", default="cuda")
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
@@ -162,7 +214,7 @@ def main() -> None:
 
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     model = load_motion_model(args.checkpoint, device)
-    channel_names = build_learned_motion_channel_names(args.num_frames)
+    channel_names = build_learned_motion_channel_names(args.num_frames, args.fusion_mode)
     cases = iter_cine_cases(args.data_root)
     manifest = []
 
@@ -177,14 +229,26 @@ def main() -> None:
         if n_frames != args.num_frames:
             raise ValueError(f"{case_id} has {n_frames} frames, expected {args.num_frames}")
 
-        for t in range(args.num_frames):
-            frame = center_crop_or_pad_volume(cine[..., t], args.image_size, np.float32)
-            nib.save(make_3d_image(frame, cine_img, np.float32), str(images_tr / f"{case_id}_{t:04d}.nii.gz"))
-        for offset, flow in enumerate(
-            predict_case_flows(model, cine, device, args.num_frames, args.ed_frame_index, args.image_size),
-            start=args.num_frames,
-        ):
-            nib.save(make_3d_image(flow, cine_img, np.float32), str(images_tr / f"{case_id}_{offset:04d}.nii.gz"))
+        cine_frames = [
+            center_crop_or_pad_volume(cine[..., t], args.image_size, np.float32)
+            for t in range(args.num_frames)
+        ]
+        frame_flows = predict_case_frame_flows(
+            model,
+            cine,
+            device,
+            args.num_frames,
+            args.ed_frame_index,
+            args.image_size,
+        )
+        export_channels = iter_export_channels(cine_frames, frame_flows, args.fusion_mode)
+        if len(export_channels) != len(channel_names):
+            raise RuntimeError(
+                f"Exported {len(export_channels)} channel arrays but dataset.json has {len(channel_names)} names"
+            )
+
+        for offset, channel in enumerate(export_channels):
+            nib.save(make_3d_image(channel, cine_img, np.float32), str(images_tr / f"{case_id}_{offset:04d}.nii.gz"))
 
         label_arr = remap_label(np.asanyarray(gd_img.dataobj), remap)
         label_arr = center_crop_or_pad_volume(label_arr, args.image_size, np.int16)
@@ -202,6 +266,7 @@ def main() -> None:
                 "ed_frame_index": args.ed_frame_index,
                 "num_frames": args.num_frames,
                 "image_size": args.image_size,
+                "fusion_mode": args.fusion_mode,
                 "channel_names": channel_names,
                 "cases": manifest,
             },

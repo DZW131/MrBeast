@@ -137,11 +137,19 @@ CARE_DATASET_ID=609 GPU=0 bash care_myocardium/scripts/train_motion_texture_ed_c
 # 1) train Motion-Net with ED-to-frame registration for 1000 epochs.
 GPU=0,1,2,3 MOTION_NET_GPUS=4 bash care_myocardium/scripts/train_motion_net.sh
 
-# 2) export cine frames + per-frame learned displacement fields as Dataset610.
+# 2a) legacy raw-stack export as Dataset610:
+#     [all cine frames], then [all learned dx/dy fields].
 bash care_myocardium/scripts/prepare_learned_motion_dataset.sh
+
+# 2b) preferred paper-style framewise export as Dataset611:
+#     ED, then (frame_t, learned dx_t, learned dy_t) for each non-ED frame.
+bash care_myocardium/scripts/prepare_learned_motion_framewise_dataset.sh
 
 # 3) train Seg-Net for 400 epochs on learned motion + cine texture channels.
 CARE_DATASET_ID=610 GPU=0 bash care_myocardium/scripts/train_learned_motion_seg_nnunet.sh 0
+
+# Train the preferred framewise route.
+GPU=0 bash care_myocardium/scripts/train_learned_motion_framewise_seg_nnunet.sh 0
 ```
 
 Useful knobs:

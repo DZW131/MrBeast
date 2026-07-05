@@ -12,6 +12,7 @@ from care_myocardium.learned_motion.data import MotionPairDataset
 from care_myocardium.learned_motion.export_nnunet import (
     build_learned_motion_channel_names,
     center_crop_or_pad_volume,
+    iter_export_channels,
     load_motion_model,
     predict_case_flows,
 )
@@ -40,14 +41,21 @@ class LearnedMotionPipelineTests(unittest.TestCase):
     def test_learned_motion_segnet_route_is_documented_and_launchable(self) -> None:
         repo = Path(__file__).resolve().parents[2]
         export_script = repo / "care_myocardium" / "scripts" / "prepare_learned_motion_dataset.sh"
+        framewise_export_script = repo / "care_myocardium" / "scripts" / "prepare_learned_motion_framewise_dataset.sh"
         train_script = repo / "care_myocardium" / "scripts" / "train_learned_motion_seg_nnunet.sh"
+        framewise_train_script = repo / "care_myocardium" / "scripts" / "train_learned_motion_framewise_seg_nnunet.sh"
         trainer = repo / "care_myocardium" / "nnunet_ext" / "LearnedMotionSeg400EpochTrainer.py"
 
         self.assertTrue(export_script.exists())
+        self.assertTrue(framewise_export_script.exists())
         self.assertTrue(train_script.exists())
+        self.assertTrue(framewise_train_script.exists())
         self.assertTrue(trainer.exists())
         self.assertIn("LEARNED_MOTION_IMAGE_SIZE", export_script.read_text(encoding="utf-8"))
         self.assertIn("--image-size", export_script.read_text(encoding="utf-8"))
+        self.assertIn("LEARNED_MOTION_FUSION_MODE", export_script.read_text(encoding="utf-8"))
+        self.assertIn("framewise_concat", framewise_export_script.read_text(encoding="utf-8"))
+        self.assertIn("611", framewise_export_script.read_text(encoding="utf-8"))
         self.assertIn("LearnedMotionSeg400EpochTrainer", train_script.read_text(encoding="utf-8"))
         self.assertIn('LEARNED_MOTION_SEG_EPOCHS", "400"', trainer.read_text(encoding="utf-8"))
 
@@ -164,6 +172,33 @@ class LearnedMotionPipelineTests(unittest.TestCase):
             "motion_t03_dx",
             "motion_t03_dy",
         ])
+
+    def test_framewise_channel_names_bind_each_frame_to_its_motion(self) -> None:
+        names = build_learned_motion_channel_names(num_frames=4, fusion_mode="framewise_concat")
+
+        self.assertEqual(names, [
+            "cine_t00",
+            "cine_t01",
+            "motion_t01_dx",
+            "motion_t01_dy",
+            "cine_t02",
+            "motion_t02_dx",
+            "motion_t02_dy",
+            "cine_t03",
+            "motion_t03_dx",
+            "motion_t03_dy",
+        ])
+
+    def test_framewise_export_order_groups_texture_and_motion(self) -> None:
+        frames = [np.full((2, 2, 1), fill_value=t, dtype=np.float32) for t in range(3)]
+        flows = [
+            (1, np.full((2, 2, 1), 11, dtype=np.float32), np.full((2, 2, 1), 12, dtype=np.float32)),
+            (2, np.full((2, 2, 1), 21, dtype=np.float32), np.full((2, 2, 1), 22, dtype=np.float32)),
+        ]
+
+        channels = iter_export_channels(frames, flows, fusion_mode="framewise_concat")
+
+        self.assertEqual([int(channel[0, 0, 0]) for channel in channels], [0, 1, 11, 12, 2, 21, 22])
 
 
 if __name__ == "__main__":

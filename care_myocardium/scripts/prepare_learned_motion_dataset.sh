@@ -15,6 +15,8 @@ Environment overrides:
   OUTPUT_DATASET_NAME     default CARE_CineMyoPS_LearnedMotionTexture
   MOTION_NET_CHECKPOINT   default learned_motion/MotionNet_EDRef_1000/checkpoint_best.pth
   LEARNED_MOTION_IMAGE_SIZE default 192, matching Motion-Net training
+  LEARNED_MOTION_FUSION_MODE default raw_stack; set framewise_concat for paper-style
+                         ED, (frame, dx, dy), ... channel layout
   NUM_PROC                nnU-Net preprocess workers, default 4
 EOF
 }
@@ -30,12 +32,14 @@ export CARE_DATASET_ID="${CARE_DATASET_ID:-610}"
 OUTPUT_DATASET_NAME="${OUTPUT_DATASET_NAME:-CARE_CineMyoPS_LearnedMotionTexture}"
 MOTION_NET_CHECKPOINT="${MOTION_NET_CHECKPOINT:-${CARE_DATASET_ROOT}/learned_motion/MotionNet_EDRef_1000/checkpoint_best.pth}"
 LEARNED_MOTION_IMAGE_SIZE="${LEARNED_MOTION_IMAGE_SIZE:-192}"
+LEARNED_MOTION_FUSION_MODE="${LEARNED_MOTION_FUSION_MODE:-raw_stack}"
 NUM_PROC="${NUM_PROC:-4}"
 
 echo "[CARE learned-motion] data=${CARE_DATA_ROOT}"
 echo "[CARE learned-motion] checkpoint=${MOTION_NET_CHECKPOINT}"
 echo "[CARE learned-motion] dataset_id=${CARE_DATASET_ID} name=${OUTPUT_DATASET_NAME}"
 echo "[CARE learned-motion] image_size=${LEARNED_MOTION_IMAGE_SIZE}"
+echo "[CARE learned-motion] fusion_mode=${LEARNED_MOTION_FUSION_MODE}"
 
 cd "${REPO_ROOT}"
 python -m care_myocardium.learned_motion.export_nnunet \
@@ -46,6 +50,7 @@ python -m care_myocardium.learned_motion.export_nnunet \
   --dataset-name "${OUTPUT_DATASET_NAME}" \
   --num-frames 30 \
   --image-size "${LEARNED_MOTION_IMAGE_SIZE}" \
+  --fusion-mode "${LEARNED_MOTION_FUSION_MODE}" \
   --overwrite
 
 CARE_DATASET_ID="${CARE_DATASET_ID}" NUM_PROC="${NUM_PROC}" bash "${SCRIPT_DIR}/plan_preprocess.sh"
