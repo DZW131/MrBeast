@@ -145,11 +145,19 @@ bash care_myocardium/scripts/prepare_learned_motion_dataset.sh
 #     ED, then (frame_t, learned dx_t, learned dy_t) for each non-ED frame.
 bash care_myocardium/scripts/prepare_learned_motion_framewise_dataset.sh
 
+# 2c) scar-friendly low-dimensional learned-motion export as Dataset612:
+#     all cine frames plus learned motion magnitude/peak/low-motion and
+#     ED-aligned residual texture summary channels.
+bash care_myocardium/scripts/prepare_learned_motion_summary_dataset.sh
+
 # 3) train Seg-Net for 400 epochs on learned motion + cine texture channels.
 CARE_DATASET_ID=610 GPU=0 bash care_myocardium/scripts/train_learned_motion_seg_nnunet.sh 0
 
 # Train the preferred framewise route.
 GPU=0 bash care_myocardium/scripts/train_learned_motion_framewise_seg_nnunet.sh 0
+
+# Train the low-dimensional motion-summary route.
+GPU=0 bash care_myocardium/scripts/train_learned_motion_summary_seg_nnunet.sh 0
 ```
 
 Useful knobs:

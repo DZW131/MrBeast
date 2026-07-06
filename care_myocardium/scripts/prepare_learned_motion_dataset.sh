@@ -17,6 +17,8 @@ Environment overrides:
   LEARNED_MOTION_IMAGE_SIZE default 192, matching Motion-Net training
   LEARNED_MOTION_FUSION_MODE default raw_stack; set framewise_concat for paper-style
                          ED, (frame, dx, dy), ... channel layout
+                         or motion_summary for cine + low-dimensional learned
+                         motion/residual texture summary features
   NUM_PROC                nnU-Net preprocess workers, default 4
 EOF
 }

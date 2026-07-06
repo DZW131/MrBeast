@@ -12,6 +12,7 @@ from care_myocardium.learned_motion.data import MotionPairDataset
 from care_myocardium.learned_motion.export_nnunet import (
     build_learned_motion_channel_names,
     center_crop_or_pad_volume,
+    compute_motion_summary_features,
     iter_export_channels,
     load_motion_model,
     predict_case_flows,
@@ -42,20 +43,26 @@ class LearnedMotionPipelineTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[2]
         export_script = repo / "care_myocardium" / "scripts" / "prepare_learned_motion_dataset.sh"
         framewise_export_script = repo / "care_myocardium" / "scripts" / "prepare_learned_motion_framewise_dataset.sh"
+        summary_export_script = repo / "care_myocardium" / "scripts" / "prepare_learned_motion_summary_dataset.sh"
         train_script = repo / "care_myocardium" / "scripts" / "train_learned_motion_seg_nnunet.sh"
         framewise_train_script = repo / "care_myocardium" / "scripts" / "train_learned_motion_framewise_seg_nnunet.sh"
+        summary_train_script = repo / "care_myocardium" / "scripts" / "train_learned_motion_summary_seg_nnunet.sh"
         trainer = repo / "care_myocardium" / "nnunet_ext" / "LearnedMotionSeg400EpochTrainer.py"
 
         self.assertTrue(export_script.exists())
         self.assertTrue(framewise_export_script.exists())
+        self.assertTrue(summary_export_script.exists())
         self.assertTrue(train_script.exists())
         self.assertTrue(framewise_train_script.exists())
+        self.assertTrue(summary_train_script.exists())
         self.assertTrue(trainer.exists())
         self.assertIn("LEARNED_MOTION_IMAGE_SIZE", export_script.read_text(encoding="utf-8"))
         self.assertIn("--image-size", export_script.read_text(encoding="utf-8"))
         self.assertIn("LEARNED_MOTION_FUSION_MODE", export_script.read_text(encoding="utf-8"))
         self.assertIn("framewise_concat", framewise_export_script.read_text(encoding="utf-8"))
         self.assertIn("611", framewise_export_script.read_text(encoding="utf-8"))
+        self.assertIn("motion_summary", summary_export_script.read_text(encoding="utf-8"))
+        self.assertIn("612", summary_export_script.read_text(encoding="utf-8"))
         self.assertIn("LearnedMotionSeg400EpochTrainer", train_script.read_text(encoding="utf-8"))
         self.assertIn('LEARNED_MOTION_SEG_EPOCHS", "400"', trainer.read_text(encoding="utf-8"))
 
@@ -199,6 +206,51 @@ class LearnedMotionPipelineTests(unittest.TestCase):
         channels = iter_export_channels(frames, flows, fusion_mode="framewise_concat")
 
         self.assertEqual([int(channel[0, 0, 0]) for channel in channels], [0, 1, 11, 12, 2, 21, 22])
+
+    def test_motion_summary_channel_names_use_low_dimensional_features(self) -> None:
+        names = build_learned_motion_channel_names(num_frames=4, fusion_mode="motion_summary")
+
+        self.assertEqual(names[:4], ["cine_t00", "cine_t01", "cine_t02", "cine_t03"])
+        self.assertEqual(names[4:], [
+            "learned_mean_dx_to_ed",
+            "learned_mean_dy_to_ed",
+            "learned_mean_magnitude_to_ed",
+            "learned_max_magnitude_to_ed",
+            "learned_std_magnitude_to_ed",
+            "learned_normalized_peak_motion_frame",
+            "learned_last_frame_magnitude_to_ed",
+            "learned_low_motion_score",
+            "learned_warped_temporal_std",
+            "learned_mean_abs_warped_diff_from_ed",
+            "learned_max_abs_warped_diff_from_ed",
+        ])
+
+    def test_motion_summary_features_include_warped_texture_residuals(self) -> None:
+        frames = [np.ones((4, 4, 1), dtype=np.float32) * 7 for _ in range(3)]
+        flows = [
+            (1, np.zeros((4, 4, 1), dtype=np.float32), np.zeros((4, 4, 1), dtype=np.float32)),
+            (2, np.zeros((4, 4, 1), dtype=np.float32), np.zeros((4, 4, 1), dtype=np.float32)),
+        ]
+
+        features = dict(compute_motion_summary_features(frames, flows, torch.device("cpu")))
+
+        self.assertTrue(np.allclose(features["learned_max_magnitude_to_ed"], 0.0))
+        self.assertTrue(np.allclose(features["learned_low_motion_score"], 0.0))
+        self.assertTrue(np.allclose(features["learned_warped_temporal_std"], 0.0))
+        self.assertTrue(np.allclose(features["learned_mean_abs_warped_diff_from_ed"], 0.0))
+        self.assertTrue(np.allclose(features["learned_max_abs_warped_diff_from_ed"], 0.0))
+
+    def test_motion_summary_export_keeps_cine_then_summary_features(self) -> None:
+        frames = [np.full((2, 2, 1), fill_value=t, dtype=np.float32) for t in range(3)]
+        flows = [
+            (1, np.ones((2, 2, 1), dtype=np.float32), np.zeros((2, 2, 1), dtype=np.float32)),
+            (2, np.zeros((2, 2, 1), dtype=np.float32), np.ones((2, 2, 1), dtype=np.float32)),
+        ]
+
+        channels = iter_export_channels(frames, flows, fusion_mode="motion_summary", device=torch.device("cpu"))
+
+        self.assertEqual(len(channels), 14)
+        self.assertEqual([int(channel[0, 0, 0]) for channel in channels[:3]], [0, 1, 2])
 
 
 if __name__ == "__main__":

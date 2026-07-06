@@ -12,6 +12,7 @@ import torch
 
 from .data import center_crop_or_pad, iter_cine_cases, normalize_pair
 from .model import MotionUNet
+from .spatial import warp_2d
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPT_DIR) not in sys.path:
@@ -27,7 +28,21 @@ from convert_cine_myops_to_nnunet import (  # noqa: E402
 
 FUSION_MODE_RAW_STACK = "raw_stack"
 FUSION_MODE_FRAMEWISE_CONCAT = "framewise_concat"
-FUSION_MODES = (FUSION_MODE_RAW_STACK, FUSION_MODE_FRAMEWISE_CONCAT)
+FUSION_MODE_MOTION_SUMMARY = "motion_summary"
+MOTION_SUMMARY_FEATURE_NAMES = [
+    "learned_mean_dx_to_ed",
+    "learned_mean_dy_to_ed",
+    "learned_mean_magnitude_to_ed",
+    "learned_max_magnitude_to_ed",
+    "learned_std_magnitude_to_ed",
+    "learned_normalized_peak_motion_frame",
+    "learned_last_frame_magnitude_to_ed",
+    "learned_low_motion_score",
+    "learned_warped_temporal_std",
+    "learned_mean_abs_warped_diff_from_ed",
+    "learned_max_abs_warped_diff_from_ed",
+]
+FUSION_MODES = (FUSION_MODE_RAW_STACK, FUSION_MODE_FRAMEWISE_CONCAT, FUSION_MODE_MOTION_SUMMARY)
 
 
 def build_learned_motion_channel_names(
@@ -45,6 +60,9 @@ def build_learned_motion_channel_names(
         for t in range(1, num_frames):
             names.extend([f"cine_t{t:02d}", f"motion_t{t:02d}_dx", f"motion_t{t:02d}_dy"])
         return names
+
+    if fusion_mode == FUSION_MODE_MOTION_SUMMARY:
+        return [f"cine_t{t:02d}" for t in range(num_frames)] + MOTION_SUMMARY_FEATURE_NAMES.copy()
 
     raise ValueError(f"Unsupported fusion_mode={fusion_mode!r}; expected one of {FUSION_MODES}")
 
@@ -148,10 +166,77 @@ def predict_case_flows(
     return flows
 
 
+@torch.no_grad()
+def warp_volume_to_ed(
+    moving_volume: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    device: torch.device,
+) -> np.ndarray:
+    if moving_volume.shape != dx.shape or moving_volume.shape != dy.shape:
+        raise ValueError(f"Warp shape mismatch: moving={moving_volume.shape}, dx={dx.shape}, dy={dy.shape}")
+
+    warped = np.zeros_like(moving_volume, dtype=np.float32)
+    for zi in range(moving_volume.shape[2]):
+        moving = torch.from_numpy(moving_volume[:, :, zi][None, None]).to(device=device, dtype=torch.float32)
+        flow = torch.from_numpy(np.stack([dx[:, :, zi], dy[:, :, zi]], axis=0)[None]).to(
+            device=device,
+            dtype=torch.float32,
+        )
+        warped[:, :, zi] = warp_2d(moving, flow)[0, 0].detach().cpu().numpy().astype(np.float32)
+    return warped
+
+
+@torch.no_grad()
+def compute_motion_summary_features(
+    cine_frames: list[np.ndarray],
+    frame_flows: list[tuple[int, np.ndarray, np.ndarray]],
+    device: torch.device,
+) -> list[tuple[str, np.ndarray]]:
+    if len(cine_frames) < 2:
+        raise ValueError("Need at least ED plus one non-ED cine frame for motion summaries")
+    if not frame_flows:
+        raise ValueError("Need predicted frame flows for motion summaries")
+
+    dx_stack = np.stack([dx.astype(np.float32, copy=False) for _, dx, _ in frame_flows], axis=-1)
+    dy_stack = np.stack([dy.astype(np.float32, copy=False) for _, _, dy in frame_flows], axis=-1)
+    mag_stack = np.sqrt(dx_stack * dx_stack + dy_stack * dy_stack).astype(np.float32)
+    max_mag = np.max(mag_stack, axis=-1).astype(np.float32)
+    peak_idx = np.argmax(mag_stack, axis=-1).astype(np.float32)
+    denom = float(max(len(cine_frames) - 1, 1))
+    peak_frame = ((peak_idx + 1.0) / denom).astype(np.float32)
+    p95 = float(np.percentile(max_mag[np.isfinite(max_mag)], 95)) if np.any(np.isfinite(max_mag)) else 0.0
+    if p95 < 1e-6:
+        low_motion_score = np.zeros_like(max_mag, dtype=np.float32)
+    else:
+        low_motion_score = (1.0 - np.clip(max_mag / p95, 0.0, 1.0)).astype(np.float32)
+
+    warped_frames = [cine_frames[0].astype(np.float32, copy=False)]
+    for t, dx, dy in frame_flows:
+        warped_frames.append(warp_volume_to_ed(cine_frames[t], dx, dy, device))
+    warped = np.stack(warped_frames, axis=-1).astype(np.float32)
+    warped_absdiff = np.abs(warped[..., 1:] - warped[..., 0, None]).astype(np.float32)
+
+    return [
+        ("learned_mean_dx_to_ed", np.mean(dx_stack, axis=-1).astype(np.float32)),
+        ("learned_mean_dy_to_ed", np.mean(dy_stack, axis=-1).astype(np.float32)),
+        ("learned_mean_magnitude_to_ed", np.mean(mag_stack, axis=-1).astype(np.float32)),
+        ("learned_max_magnitude_to_ed", max_mag),
+        ("learned_std_magnitude_to_ed", np.std(mag_stack, axis=-1).astype(np.float32)),
+        ("learned_normalized_peak_motion_frame", peak_frame),
+        ("learned_last_frame_magnitude_to_ed", mag_stack[..., -1].astype(np.float32)),
+        ("learned_low_motion_score", low_motion_score),
+        ("learned_warped_temporal_std", np.std(warped, axis=-1).astype(np.float32)),
+        ("learned_mean_abs_warped_diff_from_ed", np.mean(warped_absdiff, axis=-1).astype(np.float32)),
+        ("learned_max_abs_warped_diff_from_ed", np.max(warped_absdiff, axis=-1).astype(np.float32)),
+    ]
+
+
 def iter_export_channels(
     cine_frames: list[np.ndarray],
     frame_flows: list[tuple[int, np.ndarray, np.ndarray]],
     fusion_mode: str,
+    device: torch.device | None = None,
 ) -> list[np.ndarray]:
     if fusion_mode == FUSION_MODE_RAW_STACK:
         channels = list(cine_frames)
@@ -163,6 +248,13 @@ def iter_export_channels(
         channels = [cine_frames[0]]
         for t, dx, dy in frame_flows:
             channels.extend([cine_frames[t], dx, dy])
+        return channels
+
+    if fusion_mode == FUSION_MODE_MOTION_SUMMARY:
+        if device is None:
+            device = torch.device("cpu")
+        channels = list(cine_frames)
+        channels.extend(feature for _, feature in compute_motion_summary_features(cine_frames, frame_flows, device))
         return channels
 
     raise ValueError(f"Unsupported fusion_mode={fusion_mode!r}; expected one of {FUSION_MODES}")
@@ -193,7 +285,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--image-size", type=int, default=192)
     p.add_argument("--fusion-mode", choices=FUSION_MODES, default=FUSION_MODE_RAW_STACK,
                    help="raw_stack keeps the legacy all-cine-then-all-motion layout; "
-                        "framewise_concat exports ED followed by (frame, dx, dy) groups.")
+                        "framewise_concat exports ED followed by (frame, dx, dy) groups; "
+                        "motion_summary exports cine frames plus learned low-dimensional motion summaries.")
     p.add_argument("--device", default="cuda")
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
@@ -241,7 +334,7 @@ def main() -> None:
             args.ed_frame_index,
             args.image_size,
         )
-        export_channels = iter_export_channels(cine_frames, frame_flows, args.fusion_mode)
+        export_channels = iter_export_channels(cine_frames, frame_flows, args.fusion_mode, device)
         if len(export_channels) != len(channel_names):
             raise RuntimeError(
                 f"Exported {len(export_channels)} channel arrays but dataset.json has {len(channel_names)} names"
