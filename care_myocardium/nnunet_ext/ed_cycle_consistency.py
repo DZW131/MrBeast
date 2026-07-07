@@ -54,6 +54,30 @@ def build_last_ed_reference_view(data: torch.Tensor, num_frames: int = 30) -> to
     return torch.cat([reversed_frames, rebuilt_motion, extra], dim=1)
 
 
+def build_last_ed_reference_view_preserve_summary(data: torch.Tensor, num_frames: int = 30) -> torch.Tensor:
+    """Reverse cine frames while preserving learned motion-summary channels.
+
+    Dataset612 stores 30 cine frames followed by low-dimensional learned-motion
+    summary maps. Those maps are not the same as Dataset608's five hand-crafted
+    motion proxies, so rebuilding proxy channels would corrupt the channel
+    semantics. The summary maps are mostly cycle-invariant descriptors; the
+    normalized peak-motion frame is mirrored because the cine order is reversed.
+    """
+
+    if data.ndim < 3:
+        raise ValueError(f"Expected nnU-Net tensor with shape (B, C, ...), got {tuple(data.shape)}")
+    if data.shape[1] < num_frames:
+        raise ValueError(f"Need at least {num_frames} cine channels, got {data.shape[1]}")
+    reversed_frames = torch.flip(data[:, :num_frames], dims=(1,))
+    if data.shape[1] == num_frames:
+        return reversed_frames
+    summary = data[:, num_frames:].clone()
+    peak_motion_channel = 5
+    if summary.shape[1] > peak_motion_channel:
+        summary[:, peak_motion_channel] = 1.0 - summary[:, peak_motion_channel]
+    return torch.cat([reversed_frames, summary], dim=1)
+
+
 def masked_soft_kl_divergence(
     student_logits: torch.Tensor,
     teacher_probs: torch.Tensor,

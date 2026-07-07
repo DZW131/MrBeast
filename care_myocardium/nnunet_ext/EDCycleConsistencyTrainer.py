@@ -42,6 +42,9 @@ class EDCycleConsistencyTrainer(nnUNetTrainer):
         ramp_pos = epoch - self.ed_cycle_start_epoch + 1
         return self.ed_cycle_weight * min(1.0, ramp_pos / float(self.ed_cycle_ramp_epochs))
 
+    def _build_cycle_view(self, data: torch.Tensor) -> torch.Tensor:
+        return build_last_ed_reference_view(data, self.ed_cycle_num_frames)
+
     def train_step(self, batch: dict) -> dict:
         data = batch["data"].to(self.device, non_blocking=True)
         target = batch["target"]
@@ -56,7 +59,7 @@ class EDCycleConsistencyTrainer(nnUNetTrainer):
             first_ed_output = self.network(data)
             supervised_loss = self.loss(first_ed_output, target)
             if cycle_weight > 0:
-                last_ed_data = build_last_ed_reference_view(data, self.ed_cycle_num_frames)
+                last_ed_data = self._build_cycle_view(data)
                 last_ed_output = self.network(last_ed_data)
                 cycle_loss = ed_cycle_consistency_loss(
                     first_ed_output,

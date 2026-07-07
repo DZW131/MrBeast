@@ -158,6 +158,10 @@ GPU=0 bash care_myocardium/scripts/train_learned_motion_framewise_seg_nnunet.sh 
 
 # Train the low-dimensional motion-summary route.
 GPU=0 bash care_myocardium/scripts/train_learned_motion_summary_seg_nnunet.sh 0
+
+# Fine-tune/train the low-dimensional motion-summary route with first/last ED
+# cycle consistency. This keeps Dataset612 channel semantics intact.
+GPU=0 bash care_myocardium/scripts/train_learned_motion_summary_ed_cycle_nnunet.sh 0
 ```
 
 Useful knobs:

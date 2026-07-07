@@ -6,6 +6,7 @@ import torch
 
 from care_myocardium.nnunet_ext.ed_cycle_consistency import (
     build_last_ed_reference_view,
+    build_last_ed_reference_view_preserve_summary,
     ed_cycle_consistency_loss,
 )
 
@@ -33,6 +34,33 @@ class EDCycleConsistencyTests(unittest.TestCase):
         self.assertEqual(float(reversed_view[0, 6, 0, 0, 0]), 7.0)
         self.assertEqual(float(reversed_view[0, 7, 0, 0, 0]), -14.0)
         self.assertAlmostEqual(float(reversed_view[0, 8, 0, 0, 0]), 1.0 / 3.0, places=5)
+
+    def test_learned_motion_summary_view_preserves_summary_semantics(self) -> None:
+        data = torch.zeros((1, 11, 1, 1, 1), dtype=torch.float32)
+        data[:, 0, ...] = 1
+        data[:, 1, ...] = 2
+        data[:, 2, ...] = 3
+        data[:, 3, ...] = 4
+        data[:, 4, ...] = 10
+        data[:, 5, ...] = 11
+        data[:, 6, ...] = 12
+        data[:, 7, ...] = 13
+        data[:, 8, ...] = 14
+        data[:, 9, ...] = 0.25
+        data[:, 10, ...] = 16
+
+        reversed_view = build_last_ed_reference_view_preserve_summary(data, num_frames=4)
+
+        self.assertEqual(reversed_view.shape, data.shape)
+        self.assertEqual(float(reversed_view[0, 0, 0, 0, 0]), 4.0)
+        self.assertEqual(float(reversed_view[0, 3, 0, 0, 0]), 1.0)
+        self.assertEqual(float(reversed_view[0, 4, 0, 0, 0]), 10.0)
+        self.assertEqual(float(reversed_view[0, 5, 0, 0, 0]), 11.0)
+        self.assertEqual(float(reversed_view[0, 6, 0, 0, 0]), 12.0)
+        self.assertEqual(float(reversed_view[0, 7, 0, 0, 0]), 13.0)
+        self.assertEqual(float(reversed_view[0, 8, 0, 0, 0]), 14.0)
+        self.assertAlmostEqual(float(reversed_view[0, 9, 0, 0, 0]), 0.75, places=5)
+        self.assertEqual(float(reversed_view[0, 10, 0, 0, 0]), 16.0)
 
     def test_ed_cycle_loss_is_near_zero_for_matching_predictions(self) -> None:
         logits = torch.zeros((1, 4, 2, 2, 2), dtype=torch.float32)
