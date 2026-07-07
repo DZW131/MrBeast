@@ -13,6 +13,7 @@ Environment overrides:
   NUM_GPUS                         pass -num_gpus to nnUNetv2_train for DDP/multi-GPU training
   CARE_DATASET_ID                  default 612
   LEARNED_MOTION_ED_CYCLE_EPOCHS   default 300
+  LEARNED_MOTION_ED_CYCLE_LR       default 0.001
   LEARNED_MOTION_ED_CYCLE_WEIGHT   default 0.1
   ED_CYCLE_RAMP_EPOCHS             default 40
   ED_CYCLE_CONFIDENCE              default 0.6
@@ -30,6 +31,7 @@ CARE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export CARE_DATASET_ID="${CARE_DATASET_ID:-612}"
 export TRAINER="${TRAINER:-LearnedMotionSummaryEDCycleTrainer}"
 export LEARNED_MOTION_ED_CYCLE_EPOCHS="${LEARNED_MOTION_ED_CYCLE_EPOCHS:-300}"
+export LEARNED_MOTION_ED_CYCLE_LR="${LEARNED_MOTION_ED_CYCLE_LR:-0.001}"
 export LEARNED_MOTION_ED_CYCLE_WEIGHT="${LEARNED_MOTION_ED_CYCLE_WEIGHT:-0.1}"
 export ED_CYCLE_NUM_FRAMES="${ED_CYCLE_NUM_FRAMES:-30}"
 export ED_CYCLE_RAMP_EPOCHS="${ED_CYCLE_RAMP_EPOCHS:-40}"
@@ -40,6 +42,6 @@ export nnUNet_n_proc_DA="${nnUNet_n_proc_DA:-2}"
 export nnUNet_compile="${nnUNet_compile:-f}"
 
 echo "[CARE learned-motion summary ED-cycle] dataset=${CARE_DATASET_ID} trainer=${TRAINER} epochs=${LEARNED_MOTION_ED_CYCLE_EPOCHS}"
-echo "[CARE learned-motion summary ED-cycle] weight=${LEARNED_MOTION_ED_CYCLE_WEIGHT} ramp=${ED_CYCLE_RAMP_EPOCHS} confidence=${ED_CYCLE_CONFIDENCE} scar_weight=${ED_CYCLE_SCAR_WEIGHT}"
+echo "[CARE learned-motion summary ED-cycle] lr=${LEARNED_MOTION_ED_CYCLE_LR} weight=${LEARNED_MOTION_ED_CYCLE_WEIGHT} ramp=${ED_CYCLE_RAMP_EPOCHS} confidence=${ED_CYCLE_CONFIDENCE} scar_weight=${ED_CYCLE_SCAR_WEIGHT}"
 echo "[CARE learned-motion summary ED-cycle] ext_trainer=${nnUNet_extTrainer}"
 bash "${SCRIPT_DIR}/train_nnunet.sh" "$@"

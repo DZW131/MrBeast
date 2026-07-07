@@ -20,6 +20,7 @@ class LearnedMotionSummaryEDCycleRouteTests(unittest.TestCase):
 
         self.assertIn("class LearnedMotionSummaryEDCycleTrainer", trainer_source)
         self.assertIn('LEARNED_MOTION_ED_CYCLE_EPOCHS", "300"', trainer_source)
+        self.assertIn('LEARNED_MOTION_ED_CYCLE_LR", "0.001"', trainer_source)
         self.assertIn('LEARNED_MOTION_ED_CYCLE_WEIGHT", "0.1"', trainer_source)
         self.assertIn("checkpoint_best_scar.pth", trainer_source)
         self.assertIn("LearnedMotionSummaryEDCycleTrainer", script_source)

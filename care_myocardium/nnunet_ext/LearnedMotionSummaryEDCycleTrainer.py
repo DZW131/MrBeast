@@ -28,6 +28,7 @@ class LearnedMotionSummaryEDCycleTrainer(EDCycleConsistencyTrainer):
     ):
         super().__init__(plans, configuration, fold, dataset_json, device)
         self.num_epochs = int(os.environ.get("LEARNED_MOTION_ED_CYCLE_EPOCHS", "300"))
+        self.initial_lr = float(os.environ.get("LEARNED_MOTION_ED_CYCLE_LR", "0.001"))
         self.ed_cycle_weight = float(os.environ.get("LEARNED_MOTION_ED_CYCLE_WEIGHT", "0.1"))
         self.scar_dice_index = int(os.environ.get("LEARNED_MOTION_SCAR_DICE_INDEX", "-1"))
         self._best_scar_dice: float | None = None
