@@ -48,6 +48,43 @@ def infer_label_space(values: set[int], source_values: set[int], nnunet_values: 
     raise ValueError(f"Unexpected label values {sorted(values)}")
 
 
+def center_restore_to_shape(arr: np.ndarray, target_shape: tuple[int, int, int]) -> np.ndarray:
+    """Undo centered crop/pad by copying the prediction into a target-shaped volume."""
+
+    if arr.ndim != 3:
+        raise ValueError(f"Expected 3D prediction, got shape {arr.shape}")
+    if tuple(arr.shape) == tuple(target_shape):
+        return arr
+
+    out = np.zeros(target_shape, dtype=arr.dtype)
+    src_slices = []
+    dst_slices = []
+    for src, dst in zip(arr.shape, target_shape):
+        copy = min(src, dst)
+        src_start = max((src - dst) // 2, 0)
+        dst_start = max((dst - src) // 2, 0)
+        src_slices.append(slice(src_start, src_start + copy))
+        dst_slices.append(slice(dst_start, dst_start + copy))
+    out[tuple(dst_slices)] = arr[tuple(src_slices)]
+    return out
+
+
+def make_output_image(arr: np.ndarray, pred_img: nib.Nifti1Image, reference_cine: Path | None) -> nib.Nifti1Image:
+    if reference_cine is None:
+        nii = nib.Nifti1Image(arr, pred_img.affine, pred_img.header)
+        nii.header.set_data_dtype(np.int16)
+        return nii
+
+    ref_img = nib.load(str(reference_cine))
+    target_shape = tuple(int(v) for v in ref_img.shape[:3])
+    restored = center_restore_to_shape(arr, target_shape)
+    header = ref_img.header.copy()
+    header.set_data_shape(restored.shape)
+    header.set_zooms(ref_img.header.get_zooms()[:3])
+    header.set_data_dtype(np.int16)
+    return nib.Nifti1Image(restored.astype(np.int16, copy=False), ref_img.affine, header)
+
+
 def restore_or_copy(
     pred_path: Path,
     out_path: Path,
@@ -55,6 +92,7 @@ def restore_or_copy(
     source_values: set[int],
     nnunet_values: set[int],
     remap: dict[int, int],
+    reference_cine: Path | None = None,
 ) -> str:
     img = nib.load(str(pred_path))
     arr = np.asanyarray(img.dataobj).astype(np.int16)
@@ -67,7 +105,8 @@ def restore_or_copy(
     if effective_space == "source":
         if not values <= source_values:
             raise ValueError(f"{pred_path.name}: source-space labels expected, got {sorted(values)}")
-        shutil.copy2(pred_path, out_path)
+        nii = make_output_image(arr, img, reference_cine)
+        nib.save(nii, str(out_path))
         return "source"
 
     if effective_space != "nnunet":
@@ -77,8 +116,7 @@ def restore_or_copy(
     out = np.zeros(arr.shape, dtype=np.int16)
     for src, dst in remap.items():
         out[arr == src] = dst
-    nii = nib.Nifti1Image(out, img.affine, img.header)
-    nii.header.set_data_dtype(np.int16)
+    nii = make_output_image(out, img, reference_cine)
     nib.save(nii, str(out_path))
     return "nnunet"
 
@@ -116,6 +154,7 @@ def main() -> None:
         raise ValueError(f"Duplicate case predictions in {pred_dir}")
 
     expected_cases = [case["case_id"] for case in manifest["cases"]]
+    case_manifest = {case["case_id"]: case for case in manifest["cases"]}
     missing = [case_id for case_id in expected_cases if case_id not in pred_by_case]
     extra = sorted(set(pred_by_case) - set(expected_cases))
     if missing:
@@ -136,6 +175,7 @@ def main() -> None:
         case_dir = stage_root / "CineMyoPS" / args.center_name / case_id
         case_dir.mkdir(parents=True, exist_ok=True)
         out_path = case_dir / f"{case_id}_pred.nii.gz"
+        reference_cine = case_manifest[case_id].get("source_cine")
         label_spaces.append(restore_or_copy(
             pred_by_case[case_id],
             out_path,
@@ -143,6 +183,7 @@ def main() -> None:
             source_values,
             nnunet_values,
             remap,
+            Path(reference_cine) if reference_cine else None,
         ))
 
     if zip_path.exists():
