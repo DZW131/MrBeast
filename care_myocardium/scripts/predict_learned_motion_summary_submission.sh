@@ -10,7 +10,7 @@ FOLD="${FOLD:-0}"
 PLAN="${PLAN:-nnUNetPlans}"
 TRAINER="${TRAINER:-LearnedMotionSeg400EpochTrainer}"
 CHECKPOINT="${CHECKPOINT:-checkpoint_best_scar.pth}"
-DATASET_ID="${CARE_DATASET_ID:-612}"
+DATASET_ID="${LEARNED_MOTION_SUMMARY_DATASET_ID:-612}"
 MOTION_CHECKPOINT="${MOTION_CHECKPOINT:-${CARE_DATASET_ROOT}/learned_motion/MotionNet_EDRef_1000/checkpoint_best.pth}"
 
 if [[ -z "${CARE_CINEMYOPS_INFER_ROOT:-}" ]]; then
